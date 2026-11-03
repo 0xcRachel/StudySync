@@ -11,7 +11,7 @@ import {
   percent,
   plural,
 } from '../lib/format';
-import { refreshScrollTriggers, scrollToBottom, scrollToOffset, useTabsInk } from '../lib/motion';
+import { appScroller, isNearBottom, refreshScrollTriggers, scrollToBottom, scrollToOffset, useTabsInk } from '../lib/motion';
 import { useToast } from '../components/Toast';
 import { TaskRow } from '../components/TaskRow';
 import { Avatar, EmptyState, ErrorBar, Icon, SkeletonRows } from '../components/ui';
@@ -37,12 +37,10 @@ const CHAT_GIFTS = [
 ];
 
 /**
- * Trang cuộn theo tài liệu (không phải một vùng scroll riêng), nên phải đo
- * cửa sổ nhìn — nếu không mọi vị trí cuộn đều bị tính là "đang ở đáy".
+ * Vùng cuộn thật là .main (app là khung 100dvh), không phải tài liệu.
  */
 function isNearChatBottom(): boolean {
-  const viewportBottom = window.scrollY + window.innerHeight;
-  return document.documentElement.scrollHeight - viewportBottom < 160;
+  return isNearBottom(160);
 }
 
 /** Escape hoặc bấm ra ngoài đóng popover; nếu không, chọn mục là đường thoát duy nhất. */
@@ -218,12 +216,15 @@ export function GroupScreen({
 
   // Reader có đang ở đáy không? Cập nhật khi người dùng tự cuộn, và đặt lại
   // thành true khi vừa vào tab chat (mở chat là phải thấy tin mới nhất).
+  // Sự kiện scroll của phần tử KHÔNG nổi lên window, nên phải gắn trực tiếp.
   const stickToBottom = useRef(true);
   useEffect(() => {
     const onScroll = () => { stickToBottom.current = isNearChatBottom(); };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+    const el = appScroller();
+    const target: Window | HTMLElement = el ?? window;
+    target.addEventListener('scroll', onScroll, { passive: true } as AddEventListenerOptions);
+    return () => target.removeEventListener('scroll', onScroll);
+  }, [tab]);
 
   const scrolledToMessageId = useRef(-1);
 
@@ -372,8 +373,9 @@ export function GroupScreen({
   const loadOlder = useCallback(async () => {
     if (olderLoading || messages.length === 0) return;
     const oldest = messages.reduce((lowest, message) => Math.min(lowest, message.id), Number.POSITIVE_INFINITY);
-    const previousHeight = document.documentElement.scrollHeight;
-    const previousTop = window.scrollY;
+    const scroller = appScroller();
+    const previousHeight = scroller ? scroller.scrollHeight : document.documentElement.scrollHeight;
+    const previousTop = scroller ? scroller.scrollTop : window.scrollY;
     setOlderLoading(true);
     try {
       const data = await api.getMessages(groupId, token, undefined, oldest);
@@ -384,8 +386,14 @@ export function GroupScreen({
       });
       setHasOlder(data.length >= 100);
       window.requestAnimationFrame(() => {
-        const growth = document.documentElement.scrollHeight - previousHeight;
-        if (growth > 0) scrollToOffset(previousTop + growth);
+        // Chèn tin cũ ở ĐẦU danh sách nên phải bù đúng phần chiều cao tăng thêm
+        // vào scrollTop, nếu không đoạn đang đọc sẽ bị đẩy mất.
+        const now = scroller ? scroller.scrollHeight : document.documentElement.scrollHeight;
+        const growth = now - previousHeight;
+        if (growth > 0) {
+          if (scroller) scroller.scrollTop = previousTop + growth;
+          else scrollToOffset(previousTop + growth);
+        }
       });
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : 'Không tải được tin nhắn cũ hơn.', 'bad');

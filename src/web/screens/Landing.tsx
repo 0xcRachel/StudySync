@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TaskStatus } from '../lib/api';
 import type { Session } from '../lib/session';
 import { NEXT_STATUS, STATUS_LABEL, percent } from '../lib/format';
-import { animateTaskCompletion, useLandingMotion } from '../lib/motion';
+import { animateTaskCompletion, useLandingMotion, useSmoothScroll } from '../lib/motion';
 import { AuthSheet, type AuthMode } from '../components/AuthSheet';
 import { Brand, StatusMark } from '../components/ui';
 
@@ -56,6 +56,9 @@ export function Landing({
   apiState: 'checking' | 'ok' | 'down';
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  // Cuộn mượt chỉ có nghĩa với trang giới thiệu (tài liệu cuộn). Workspace là
+  // khung 100dvh với .main là vùng cuộn riêng, Lenis ở đó sẽ vô dụng.
+  useSmoothScroll();
   const [authMode, setAuthMode] = useState<AuthMode | null>(() => window.sessionStorage.getItem('studysync.oauth.error') ? 'login' : null);
   const [demo, setDemo] = useState<DemoTask[]>(DEMO);
   const [stuck, setStuck] = useState(false);

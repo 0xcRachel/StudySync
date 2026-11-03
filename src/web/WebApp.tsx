@@ -6,7 +6,7 @@ import { clearSession, readSession, updateStoredUser, writeSession } from './lib
 import type { Session } from './lib/session';
 import { HOME, parseHash, routeKey, routeToHash } from './lib/routing';
 import type { Route } from './lib/routing';
-import { usePageMotion, useSmoothScroll } from './lib/motion';
+import { usePageMotion } from './lib/motion';
 import { CSS, FONT_HREF } from './styles';
 import { ToastProvider, useToast } from './components/Toast';
 import { useUserRealtime } from '../lib/useUserRealtime';
@@ -266,7 +266,6 @@ function AppShell({
 
 function Workspace() {
   const toast = useToast();
-  useSmoothScroll();
 
   const [session, setSession] = useState<Session | null>(() => consumeOAuthRedirect() ?? readSession());
   const [booting, setBooting] = useState(() => readSession() !== null);

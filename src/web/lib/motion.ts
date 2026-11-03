@@ -60,22 +60,31 @@ export function startScroll(): void {
   lenis?.start();
 }
 
-export function scrollToTop(immediate = true): void {
-  if (typeof window === 'undefined') return;
-  if (lenis) {
-    lenis.scrollTo(0, { immediate, force: true });
-  } else {
-    window.scrollTo({ top: 0, behavior: immediate ? 'auto' : 'smooth' });
-  }
+/**
+ * Workspace là khung 100dvh nên phần cuộn thật là .main, không phải tài liệu.
+ * Landing vẫn cuộn theo tài liệu (và có Lenis), vì mọi helper ở dưới phải phân
+ * biệt hai trường hợp này chứ không thể giả sử window.scrollY là đúng chỗ.
+ */
+export function appScroller(): HTMLElement | null {
+  if (typeof document === 'undefined') return null;
+  const el = document.querySelector<HTMLElement>('.main');
+  if (!el) return null;
+  return el.scrollHeight > el.clientHeight + 1 ? el : null;
 }
 
-/**
- * Nhảy tới toạ độ tuyệt đối. Với cú nhảy tức thời phải dùng scroll gốc:
- * Lenis giữ bộ đệm max-scroll cũ nên sẽ kẹp lệnh cuộn về giữa trang, và nó
- * vẫn theo dõi scroll do trình duyệt điều khiển nên không bị lệch trạng thái.
- */
-export function scrollToOffset(top: number, immediate = true): void {
-  if (typeof window === 'undefined') return;
+export function isNearBottom(offset = 160): boolean {
+  const el = appScroller();
+  if (el) return el.scrollHeight - el.scrollTop - el.clientHeight < offset;
+  if (typeof window === 'undefined') return true;
+  return document.documentElement.scrollHeight - (window.scrollY + window.innerHeight) < offset;
+}
+
+function scrollTopTo(top: number, immediate: boolean): void {
+  const el = appScroller();
+  if (el) {
+    el.scrollTop = top;
+    return;
+  }
   if (lenis && !immediate) {
     lenis.scrollTo(top, { force: true });
     return;
@@ -84,9 +93,28 @@ export function scrollToOffset(top: number, immediate = true): void {
   window.scrollTo({ top, behavior: 'auto' });
 }
 
+export function scrollToTop(immediate = true): void {
+  if (typeof window === 'undefined') return;
+  scrollTopTo(0, immediate);
+}
+
+/**
+ * Nhảy tới toạ độ tuyệt đối. Với cú nhảy tức thời phải dùng scroll gốc:
+ * Lenis giữ bộ đệm max-scroll cũ nên sẽ kẹp lệnh cuộn về giữa trang.
+ */
+export function scrollToOffset(top: number, immediate = true): void {
+  if (typeof window === 'undefined') return;
+  scrollTopTo(top, immediate);
+}
+
 export function scrollToBottom(immediate = true): void {
   if (typeof window === 'undefined') return;
-  scrollToOffset(document.documentElement.scrollHeight, immediate);
+  const el = appScroller();
+  if (el) {
+    el.scrollTop = el.scrollHeight;
+    return;
+  }
+  scrollTopTo(document.documentElement.scrollHeight, immediate);
 }
 
 let refreshHandle = 0;

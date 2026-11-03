@@ -461,11 +461,15 @@ textarea.field {
 
 /* ---------- App shell ---------- */
 
-.app { min-height: 100vh; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); }
+/* Khung app cao đúng bằng viewport: sidebar và vùng nội dung cuộn ĐỘC LẬP.
+   Trước đây .app chỉ min-height:100vh nên mọi thứ dồn thành một trang ~2000px
+   và người dùng phải cuộn cả trang để thấy tiêu đề nhóm, tab rồi ô soạn thảo. */
+.app { height: 100dvh; display: grid; grid-template-columns: var(--rail) minmax(0, 1fr); overflow: hidden; }
 
 .rail {
   position: relative;
   align-self: stretch;
+  overflow-y: auto;
   min-height: 100vh;
   width: auto;
   border-right: 1px solid var(--line);
@@ -554,7 +558,7 @@ textarea.field {
 .rail-signout { margin-top: 10px; padding-left: 10px; font-size: 12px; color: var(--ink-3); }
 .rail-signout:hover { color: var(--ink); }
 
-.main { min-width: 0; min-height: 100vh; }
+.main { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; }
 .page {
   max-width: 1080px;
   padding: clamp(34px, 4.4vw, 68px) var(--pad) 140px;
@@ -1090,18 +1094,19 @@ textarea.field {
 }
 
 @media (max-width: 980px) {
-  .app { display: block; }
+  /* Ba hàng thật: đầu, nội dung cuộn, điều hướng đáy. Thanh dưới không còn là
+     overlay nên ô soạn thảo không phải trừ 60px để né nó nữa. */
+  .app { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
   .rail { display: none; }
   .main { margin-left: 0; }
-  .page { padding-bottom: 112px; }
+  .page { padding-bottom: 28px; }
 
   .mhead {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 16px;
-    position: sticky;
-    top: 0;
+    position: static;
     z-index: 35;
     height: 56px;
     padding-inline: var(--pad);
@@ -1134,8 +1139,7 @@ textarea.field {
   .tabbar {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    position: fixed;
-    inset: auto 0 0 0;
+    position: static;
     z-index: 40;
     background: var(--paper);
     border-top: 1px solid var(--line);
@@ -1153,7 +1157,7 @@ textarea.field {
 
   /* Tabbar cố định cao 60px tới tận 980px, nên ô soạn thảo phải né nó ở
      mọi khổ nằm trong khoảng 641–980px, không chỉ dưới 640px. */
-  .chat-form { bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+  .chat-form { bottom: 0; }
 
   .hero { grid-template-columns: minmax(0, 1fr); gap: 46px; padding-top: 40px; padding-bottom: 64px; }
   .hero-art { max-width: 480px; }
@@ -1196,7 +1200,7 @@ textarea.field {
   .msg-head { gap: 6px; margin: 0 3px 3px; }
   .msg-actions { gap: 2px; }
   .msg-action { width: 26px; height: 24px; }
-  .chat-form { position: sticky; bottom: calc(60px + env(safe-area-inset-bottom, 0px)); padding: 7px; border-radius: 15px; }
+  .chat-form { position: sticky; bottom: 0; padding: 7px; border-radius: 15px; }
   .chat-toolbar > span { max-width: 57%; line-height: 1.25; }
   .chat-tool { width: 34px; height: 34px; }
   .chat-send { width: 36px; height: 36px; }
