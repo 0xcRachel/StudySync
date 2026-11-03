@@ -827,10 +827,14 @@ export function GroupScreen({
                             {message.sender_id === user.id || canModerate ? <button type="button" className={deleteConfirmId === message.id ? 'msg-action danger confirm' : 'msg-action danger'} onClick={() => void removeMessage(message)} aria-label={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'} title={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'}>{deleteConfirmId === message.id ? 'Xóa?' : <Icon name="trash" />}</button> : null}
                         </div>
                       </div>
-                      {message.reply_to ? <div className="msg-reply-quote"><Avatar name={message.reply_to.sender_name} url={message.reply_to.avatar_url} size={18} /><span><strong>{message.reply_to.sender_name}</strong><span className="reply-preview">{message.reply_to.body || 'Ảnh đính kèm'}</span></span></div> : null}
-                      {editingMessageId === message.id ? <div className="message-edit"><textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} maxLength={4000} autoFocus /><div><button type="button" className="btn-quiet" onClick={() => setEditingMessageId(null)}>Huỷ</button><button type="button" className="btn btn-sm" onClick={() => void saveEditedMessage(message)}>Lưu</button></div></div> : (message.body || !message.image_url) ? <p className="msg-body">{renderBody(message.body)}</p> : null}
+                      {message.body || message.reply_to || message.image_url || editingMessageId === message.id ? (
+                        <div className={message.body || message.reply_to ? 'msg-bubble' : 'msg-bubble media-only'}>
+                          {message.reply_to ? <div className="msg-reply-quote"><Avatar name={message.reply_to.sender_name} url={message.reply_to.avatar_url} size={18} /><span><strong>{message.reply_to.sender_name}</strong><span className="reply-preview">{message.reply_to.body || 'Ảnh đính kèm'}</span></span></div> : null}
+                          {editingMessageId === message.id ? <div className="message-edit"><textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} maxLength={4000} autoFocus /><div><button type="button" className="btn-quiet" onClick={() => setEditingMessageId(null)}>Huỷ</button><button type="button" className="btn btn-sm" onClick={() => void saveEditedMessage(message)}>Lưu</button></div></div> : message.body ? <p className="msg-body">{renderBody(message.body)}</p> : null}
+                          {message.image_url ? <ChatImage url={message.image_url} token={token} /> : null}
+                        </div>
+                      ) : null}
                       {message.reactions?.length ? <div className="msg-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction.emoji} className={reaction.reacted ? 'msg-reaction active' : 'msg-reaction'} aria-pressed={reaction.reacted} onClick={() => void reactToMessage(message, reaction.emoji)}>{reaction.emoji}<span>{reaction.count}</span></button>)}</div> : null}
-                      {message.image_url ? <ChatImage url={message.image_url} token={token} /> : null}
                       {message.id === latestOwnMessageId && latestReaders.length > 0 ? <div className="message-read">Đã xem bởi {latestReaders.slice(0, 3).join(', ')}{latestReaders.length > 3 ? ` và ${latestReaders.length - 3} người khác` : ''}</div> : null}
                     </div>
                   </article>

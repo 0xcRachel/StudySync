@@ -778,23 +778,22 @@ textarea.field {
 .msg.me .msg-head { flex-direction: row-reverse; }
 .msg-name { font-size: 12px; font-weight: 600; letter-spacing: -.01em; color: var(--ink-2); }
 .msg-time { font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.msg-body {
-  margin: 0;
-  padding: 9px 13px;
+.msg-bubble {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 12px;
   border: 1px solid var(--line);
-  border-radius: 4px 16px 16px 16px;
+  border-radius: 6px 16px 16px 16px;
   background: var(--surface);
-  font-size: 14.5px;
-  line-height: 1.56;
-  color: var(--ink-2);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
   box-shadow: 0 1px 2px rgba(21,23,26,.03);
 }
-.msg.me .msg-body { border-color: #c7ddd0; border-radius: 16px 4px 16px 16px; background: var(--wash); color: var(--ink); box-shadow: none; }
+.msg.me .msg-bubble { border-color: #c7ddd0; border-radius: 16px 6px 16px 16px; background: var(--wash); box-shadow: none; }
+.msg-bubble.media-only { padding: 4px; border-radius: 16px; }
+.msg-body { margin: 0; font-size: 14.5px; line-height: 1.56; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.me .msg-body { color: var(--ink); }
 .msg.me .msg-name::after { content: ' · bạn'; color: var(--ink-3); font-weight: 400; }
 .msg[data-continuation="true"] { margin-bottom: 4px; }
-.msg[data-continuation="true"] .msg-body { border-radius: 16px; }
+.msg[data-continuation="true"] .msg-bubble { border-radius: 16px; }
 .msg-gutter { position: relative; flex: none; width: 30px; display: grid; place-items: center; padding-top: 10px; }
 .msg-gutter::before { content: ''; position: absolute; top: -9px; bottom: -13px; left: 50%; width: 1px; background: rgba(206,211,201,.9); }
 .msg-hover-time { color: var(--ink-3); font-size: 9px; font-variant-numeric: tabular-nums; opacity: 0; transition: opacity .16s ease; }
@@ -837,22 +836,22 @@ textarea.field {
 .msg-reaction { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.62); font-size: 12px; }
 .msg-reaction span { color: var(--ink-3); font-size: 10px; font-variant-numeric: tabular-nums; }
 .msg-reaction.active { border-color: #8aa697; background: var(--wash); }
-/* Mẩu trả lời + bubble chia chung một mép (flex-start / flex-end), nên đường
-   nối chân thật nhất là kéo mép nhấn của mẩu xuống chạm đúng góc tail bubble.
-   Trước đây connector là span tuyệt đối neo theo bề rộng fit-content của mẩu,
-   vì vậy nó lơ lửng ra ngoài cột nội dung. */
-.msg-reply-quote { position: relative; display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; margin: 0 0 7px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 9px; background: rgba(230,232,225,.55); font-size: 12px; color: var(--ink-3); }
-.msg-reply-quote::after { content: ''; position: absolute; left: 6px; bottom: -7px; width: 2px; height: 7px; background: #8aa697; border-radius: 0 0 2px 2px; }
-.msg.me .msg-reply-quote::after { left: auto; right: 6px; }
+/* Mẩu trích dẫn nằm TRONG bubble, ngăn với nội dung bằng một thanh accent dọc
+   đúng kiểu Telegram/Messenger — không có đường nối nào giữa hai khối. */
+.msg-reply-quote { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; margin: 0 0 7px; padding: 1px 0 1px 9px; border-left: 2px solid #8aa697; font-size: 12px; line-height: 1.35; color: var(--ink-3); }
 .msg-reply-quote .avatar { border-radius: 50%; }
+.msg-reply-quote > span { min-width: 0; }
 .msg-reply-quote strong { display: block; color: var(--ink-2); font-weight: 600; }
+.reply-preview { display: block; max-width: 42ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reply-preview { display: block; max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-mention { color: #315fbc; background: rgba(71,111,211,.1); border-radius: 3px; padding: 0 2px; font-weight: 550; }
-.chat-image-link { display: inline-block; margin-top: 9px; max-width: min(420px, 100%); }
+.chat-image-link { display: block; margin-top: 7px; max-width: min(420px, 100%); }
+.msg-bubble.media-only .chat-image-link { margin-top: 0; }
+.msg-bubble.media-only .chat-image { border: 0; border-radius: 12px; }
 .chat-image { display: block; max-width: 100%; max-height: 420px; object-fit: contain; border: 1px solid var(--line); border-radius: 5px; }
 .chat-image-loading, .chat-image-error { display: inline-block; margin-top: 8px; font-size: 12px; color: var(--ink-3); }
-.message-edit { display: grid; gap: 7px; margin-top: 7px; }
-.message-edit textarea { width: 100%; min-height: 76px; padding: 9px 11px; resize: vertical; border: 1px solid var(--line-2); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; }
+.message-edit { display: grid; gap: 7px; margin: 0; }
+.message-edit textarea { width: 100%; min-height: 76px; padding: 9px 11px; resize: vertical; border: 1px solid var(--line-2); border-radius: 10px; background: rgba(255,255,255,.72); color: var(--ink); font: inherit; }
 .message-edit > div { display: flex; justify-content: flex-end; gap: 8px; }
 .message-read { margin: 5px 4px 0; color: var(--ink-3); font-size: 10px; }
 
@@ -1194,7 +1193,8 @@ textarea.field {
   .msg .avatar { width: 28px; height: 28px; }
   .msg-gutter { width: 28px; }
   .msg-content { max-width: 86%; }
-  .msg-body { font-size: 14px; padding: 8px 11px; }
+  .msg-bubble { padding: 7px 10px; }
+  .msg-body { font-size: 14px; }
   .msg-head { gap: 6px; margin: 0 3px 3px; }
   .msg-actions { gap: 2px; }
   .msg-action { width: 26px; height: 24px; }
