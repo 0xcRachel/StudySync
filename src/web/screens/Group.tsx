@@ -284,6 +284,13 @@ export function GroupScreen({
   }, [tab, groupId, token, realtimeStatus]);
 
   useEffect(() => {
+    const el = chatInputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  }, [chatDraft]);
+
+  useEffect(() => {
     if (tab !== 'chat' || !chatDraft.trim()) return undefined;
     sendTyping(true);
     const timer = window.setTimeout(() => sendTyping(false), 1200);

@@ -801,7 +801,10 @@ textarea.field {
 @media (hover: hover) and (pointer: fine) {
   .msg[data-continuation="true"]:hover .msg-hover-time,
   .msg[data-continuation="true"]:focus-within .msg-hover-time { opacity: 1; }
-  .msg-head-quiet { position: absolute; top: -11px; z-index: 15; padding: 2px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); box-shadow: 0 4px 14px rgba(21,23,26,.1); }
+  /* Pill chỉ được hiện nền cùng lúc với các nút; nếu không nó là một khối trắng
+     rỗng đè lên bubble khi chưa trỏ chuột. */
+  .msg-head-quiet { position: absolute; top: -11px; z-index: 15; display: flex; padding: 2px; border: 1px solid transparent; border-radius: 9px; background: transparent; opacity: 0; transition: opacity .14s ease; }
+  .msg:hover .msg-head-quiet, .msg:focus-within .msg-head-quiet { opacity: 1; border-color: var(--line); background: var(--surface); box-shadow: 0 4px 14px rgba(21,23,26,.1); }
   .msg:not(.me) .msg-head-quiet { left: 42px; }
   .msg.me .msg-head-quiet { right: 42px; }
 }
@@ -865,7 +868,7 @@ textarea.field {
 }
 .chat-compose-row { display: flex; align-items: flex-end; gap: 8px; }
 .chat-text-wrap { position: relative; min-width: 0; flex: 1; }
-.chat-textarea { display: block; width: 100%; min-height: 44px; max-height: 180px; resize: vertical; border: 0; outline: 0; padding: 10px 12px 5px; background: transparent; color: var(--ink); font: inherit; line-height: 1.5; }
+.chat-textarea { display: block; width: 100%; min-height: 44px; max-height: 180px; overflow-y: auto; resize: none; border: 0; outline: 0; padding: 10px 12px 5px; background: transparent; color: var(--ink); font: inherit; line-height: 1.5; }
 .chat-textarea::placeholder { color: var(--ink-3); }
 .chat-tool, .chat-send { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 11px; color: var(--ink-2); transition: background .15s ease, color .15s ease, transform .15s ease; }
 .chat-tool:hover { background: var(--sunk); color: var(--ink); }
