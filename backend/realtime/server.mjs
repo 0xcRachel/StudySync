@@ -53,6 +53,10 @@ let pollBusy = false;
 let notificationPollBusy = false;
 
 httpServer.on('upgrade', (request, socket, head) => {
+  // A raw socket can error before the handshake completes (malformed frame,
+  // client abort). Without a listener the 'error' event throws and takes the
+  // whole process — and dev-server.mjs — down with it.
+  socket.on('error', () => socket.destroy());
   const origin = request.headers.origin;
   if (allowedOrigins[0] !== '*' && origin && !allowedOrigins.includes(origin)) {
     socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
@@ -66,6 +70,8 @@ httpServer.on('upgrade', (request, socket, head) => {
   }
   wss.handleUpgrade(request, socket, head, (websocket) => wss.emit('connection', websocket));
 });
+
+wss.on('error', (error) => console.error(`Real-time gateway error: ${error.message}`));
 
 function send(client, packet) {
   if (client.socket.readyState === WebSocket.OPEN) client.socket.send(JSON.stringify(packet));
@@ -95,11 +101,16 @@ async function authenticate(token, groupId) {
 }
 
 function roomFor(groupId) {
-  if (!rooms.has(groupId)) rooms.set(groupId, { clients: new Set(), cursor: 0, taskSignature: null, memberSignature: null, messageState: new Map() });
+  if (!rooms.has(groupId)) rooms.set(groupId, { clients: new Set(), cursor: 0, taskSignature: null, memberSignature: null, stateSyncedAt: 0, messageState: new Map() });
   return rooms.get(groupId);
 }
 
-async function syncRoomState(groupId, room) {
+async function syncRoomState(groupId, room, force = false) {
+  // Tasks and members change far less often than messages; re-scanning both
+  // every 500 ms per room is what saturated MySQL. Presence and typing already
+  // travel over their own events, so a short delay here is not user-visible.
+  if (!force && Date.now() - room.stateSyncedAt < STATE_SYNC_INTERVAL_MS) return;
+  room.stateSyncedAt = Date.now();
   const [tasks] = await pool.execute('SELECT id, group_id, title, status, created_at, updated_at FROM tasks WHERE group_id = ? ORDER BY id ASC', [groupId]);
   const [assignments] = await pool.execute('SELECT ta.task_id, u.id, u.name, u.username, u.avatar_url FROM task_assignees ta JOIN tasks t ON t.id = ta.task_id JOIN users u ON u.id = ta.user_id WHERE t.group_id = ? ORDER BY u.name', [groupId]);
   const byTask = new Map();
@@ -120,69 +131,78 @@ async function syncRoomState(groupId, room) {
   room.memberSignature = memberSignature;
 }
 
+async function handlePacket(client, raw, socket, authTimeout) {
+  let packet;
+  try { packet = JSON.parse(raw.toString()); } catch { return; }
+  if (!client.user) {
+    if (packet.type !== 'auth' || typeof packet.token !== 'string') {
+      socket.close(4401, 'Authentication required');
+      return;
+    }
+    try {
+      if (packet.scope === 'user') {
+        client.scope = 'user';
+        client.user = await authenticateUser(packet.token);
+        const [latest] = await pool.execute('SELECT COALESCE(MAX(id), 0) AS id FROM notifications WHERE user_id = ?', [client.user.id]);
+        client.notificationCursor = Number(latest[0]?.id ?? 0);
+        if (!userClients.has(client.user.id)) userClients.set(client.user.id, new Set());
+        userClients.get(client.user.id).add(client);
+        clearTimeout(authTimeout);
+        send(client, { type: 'ready', userId: client.user.id });
+        return;
+      }
+      if (!Number.isSafeInteger(Number(packet.groupId))) {
+        socket.close(4401, 'Authentication required');
+        return;
+      }
+      client.scope = 'group';
+      client.groupId = Number(packet.groupId);
+      client.user = await authenticate(packet.token, client.groupId);
+      client.cursor = Number.isSafeInteger(Number(packet.lastMessageId)) ? Number(packet.lastMessageId) : 0;
+      if (packet.trackMessages === false) {
+        const [latest] = await pool.execute('SELECT COALESCE(MAX(id), 0) AS id FROM messages WHERE group_id = ?', [client.groupId]);
+        client.cursor = Number(latest[0]?.id ?? 0);
+      }
+      client.room = roomFor(client.groupId);
+      client.room.clients.add(client);
+      clearTimeout(authTimeout);
+      await syncRoomState(client.groupId, client.room, true);
+      await pool.execute('UPDATE users SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?', [client.user.id]);
+      const [reads] = await pool.execute('SELECT mr.user_id, mr.last_message_id, u.name FROM message_reads mr JOIN users u ON u.id = mr.user_id WHERE mr.group_id = ?', [client.groupId]);
+      send(client, { type: 'ready', userId: client.user.id, onlineUserIds: [...new Set([...client.room.clients].map((entry) => entry.user.id))], reads: reads.map((item) => ({ userId: Number(item.user_id), messageId: Number(item.last_message_id), name: item.name })) });
+      broadcast(client.room, { type: 'presence', userId: client.user.id, name: client.user.name, online: true }, client);
+    } catch (error) {
+      send(client, { type: 'error', message: error instanceof Error ? error.message : 'Không xác thực được kết nối.' });
+      socket.close(4401, 'Unauthorized');
+    }
+    return;
+  }
+
+  if (packet.type === 'typing' && client.room && Date.now() - client.lastTypingAt > 250) {
+    client.lastTypingAt = Date.now();
+    broadcast(client.room, { type: 'typing', userId: client.user.id, name: client.user.name, active: Boolean(packet.active) }, client);
+  } else if (packet.type === 'read' && client.room && Number.isSafeInteger(Number(packet.messageId)) && Number(packet.messageId) > 0) {
+    const messageId = Number(packet.messageId);
+    const [valid] = await pool.execute('SELECT 1 FROM messages WHERE id = ? AND group_id = ? LIMIT 1', [messageId, client.groupId]);
+    if (valid.length) {
+      await pool.execute('INSERT INTO message_reads (group_id, user_id, last_message_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE last_message_id = GREATEST(last_message_id, VALUES(last_message_id)), read_at = CURRENT_TIMESTAMP', [client.groupId, client.user.id, messageId]);
+      broadcast(client.room, { type: 'read', userId: client.user.id, name: client.user.name, messageId });
+    }
+  }
+}
+
 wss.on('connection', (socket) => {
   const client = { socket, user: null, room: null, groupId: null, scope: null, cursor: 0, notificationCursor: 0, alive: true, lastTypingAt: 0 };
   clients.add(client);
   const authTimeout = setTimeout(() => { if (!client.user) socket.close(4401, 'Authentication timeout'); }, 5000);
 
   socket.on('pong', () => { client.alive = true; });
+  socket.on('error', () => socket.terminate());
   socket.on('message', async (raw) => {
-    let packet;
-    try { packet = JSON.parse(raw.toString()); } catch { return; }
-    if (!client.user) {
-      if (packet.type !== 'auth' || typeof packet.token !== 'string') {
-        socket.close(4401, 'Authentication required');
-        return;
-      }
-      try {
-        if (packet.scope === 'user') {
-          client.scope = 'user';
-          client.user = await authenticateUser(packet.token);
-          const [latest] = await pool.execute('SELECT COALESCE(MAX(id), 0) AS id FROM notifications WHERE user_id = ?', [client.user.id]);
-          client.notificationCursor = Number(latest[0]?.id ?? 0);
-          if (!userClients.has(client.user.id)) userClients.set(client.user.id, new Set());
-          userClients.get(client.user.id).add(client);
-          clearTimeout(authTimeout);
-          send(client, { type: 'ready', userId: client.user.id });
-          return;
-        }
-        if (!Number.isSafeInteger(Number(packet.groupId))) {
-          socket.close(4401, 'Authentication required');
-          return;
-        }
-        client.scope = 'group';
-        client.groupId = Number(packet.groupId);
-        client.user = await authenticate(packet.token, client.groupId);
-        client.cursor = Number.isSafeInteger(Number(packet.lastMessageId)) ? Number(packet.lastMessageId) : 0;
-        if (packet.trackMessages === false) {
-          const [latest] = await pool.execute('SELECT COALESCE(MAX(id), 0) AS id FROM messages WHERE group_id = ?', [client.groupId]);
-          client.cursor = Number(latest[0]?.id ?? 0);
-        }
-        client.room = roomFor(client.groupId);
-        client.room.clients.add(client);
-        clearTimeout(authTimeout);
-        if (client.room.taskSignature === null || client.room.memberSignature === null) await syncRoomState(client.groupId, client.room);
-        await pool.execute('UPDATE users SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?', [client.user.id]);
-        const [reads] = await pool.execute('SELECT mr.user_id, mr.last_message_id, u.name FROM message_reads mr JOIN users u ON u.id = mr.user_id WHERE mr.group_id = ?', [client.groupId]);
-        send(client, { type: 'ready', userId: client.user.id, onlineUserIds: [...new Set([...client.room.clients].map((entry) => entry.user.id))], reads: reads.map((item) => ({ userId: Number(item.user_id), messageId: Number(item.last_message_id), name: item.name })) });
-        broadcast(client.room, { type: 'presence', userId: client.user.id, name: client.user.name, online: true }, client);
-      } catch (error) {
-        send(client, { type: 'error', message: error instanceof Error ? error.message : 'Không xác thực được kết nối.' });
-        socket.close(4401, 'Unauthorized');
-      }
-      return;
-    }
-
-    if (packet.type === 'typing' && client.room && Date.now() - client.lastTypingAt > 250) {
-      client.lastTypingAt = Date.now();
-      broadcast(client.room, { type: 'typing', userId: client.user.id, name: client.user.name, active: Boolean(packet.active) }, client);
-    } else if (packet.type === 'read' && client.room && Number.isSafeInteger(Number(packet.messageId)) && Number(packet.messageId) > 0) {
-      const messageId = Number(packet.messageId);
-      const [valid] = await pool.execute('SELECT 1 FROM messages WHERE id = ? AND group_id = ? LIMIT 1', [messageId, client.groupId]);
-      if (valid.length) {
-        await pool.execute('INSERT INTO message_reads (group_id, user_id, last_message_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE last_message_id = GREATEST(last_message_id, VALUES(last_message_id)), read_at = CURRENT_TIMESTAMP', [client.groupId, client.user.id, messageId]);
-        broadcast(client.room, { type: 'read', userId: client.user.id, name: client.user.name, messageId });
-      }
+    try {
+      await handlePacket(client, raw, socket, authTimeout);
+    } catch (error) {
+      console.error(`Real-time packet failed: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
   });
 
@@ -204,6 +224,10 @@ wss.on('connection', (socket) => {
   });
 });
 
+const MESSAGE_WINDOW = 100;
+const STATE_SYNC_INTERVAL_MS = 2000;
+const TRACKED_MESSAGE_LIMIT = 300;
+
 async function pollMessages() {
   if (!pool || pollBusy) return;
   pollBusy = true;
@@ -212,13 +236,29 @@ async function pollMessages() {
       if (room.clients.size === 0) continue;
       await syncRoomState(groupId, room);
       const [rows] = await pool.execute(
-        'SELECT m.id, m.group_id, m.sender_id, u.name AS sender_name, u.avatar_url, m.body, m.reply_to_id, m.image_name, m.created_at, m.edited_at, m.deleted_at, parent.body AS reply_body, parent.image_name AS reply_image_name, reply_user.name AS reply_sender_name, reply_user.avatar_url AS reply_avatar_url FROM messages m JOIN users u ON u.id = m.sender_id LEFT JOIN messages parent ON parent.id = m.reply_to_id AND parent.deleted_at IS NULL LEFT JOIN users reply_user ON reply_user.id = parent.sender_id WHERE m.group_id = ? ORDER BY m.id DESC LIMIT 100',
+        'SELECT m.id, m.group_id, m.sender_id, u.name AS sender_name, u.avatar_url, m.body, m.reply_to_id, m.image_name, m.created_at, m.edited_at, m.deleted_at, parent.body AS reply_body, parent.image_name AS reply_image_name, reply_user.name AS reply_sender_name, reply_user.avatar_url AS reply_avatar_url FROM messages m JOIN users u ON u.id = m.sender_id LEFT JOIN messages parent ON parent.id = m.reply_to_id AND parent.deleted_at IS NULL LEFT JOIN users reply_user ON reply_user.id = parent.sender_id WHERE m.group_id = ? ORDER BY m.id DESC LIMIT ' + MESSAGE_WINDOW,
         [groupId],
       );
       rows.reverse();
+
+      // One query for every reaction in the window instead of one per message.
+      const reactionRowsByMessage = new Map();
+      if (rows.length) {
+        const marks = rows.map(() => '?').join(',');
+        const [reactionRows] = await pool.execute(
+          `SELECT message_id, emoji, user_id FROM message_reactions WHERE message_id IN (${marks}) ORDER BY emoji, user_id`,
+          rows.map((message) => Number(message.id)),
+        );
+        for (const reaction of reactionRows) {
+          const id = Number(reaction.message_id);
+          if (!reactionRowsByMessage.has(id)) reactionRowsByMessage.set(id, []);
+          reactionRowsByMessage.get(id).push(reaction);
+        }
+      }
+
       for (const message of rows) {
         const id = Number(message.id);
-        const [reactionRows] = await pool.execute('SELECT emoji, user_id FROM message_reactions WHERE message_id = ? ORDER BY emoji, user_id', [id]);
+        const reactionRows = reactionRowsByMessage.get(id) || [];
         const signature = JSON.stringify([message.body, message.edited_at, message.deleted_at, reactionRows.map((reaction) => [reaction.emoji, Number(reaction.user_id)])]);
         const previous = room.messageState.get(id);
         const deleted = message.deleted_at !== null;
@@ -245,6 +285,14 @@ async function pollMessages() {
         room.messageState.set(id, { signature, deleted });
         for (const client of room.clients) client.cursor = Math.max(client.cursor, id);
         room.cursor = Math.max(room.cursor, id);
+      }
+
+      // Forget ids that fell out of the window; without this the map keeps
+      // every id the room ever saw. Signatures of live messages are preserved
+      // so pruning does not trigger a re-broadcast of the whole thread.
+      if (room.messageState.size > TRACKED_MESSAGE_LIMIT) {
+        const inWindow = new Set(rows.map((message) => Number(message.id)));
+        for (const id of room.messageState.keys()) if (!inWindow.has(id)) room.messageState.delete(id);
       }
     }
   } catch (error) {

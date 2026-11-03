@@ -3,6 +3,13 @@
 declare(strict_types=1);
 
 /**
+ * Bump this whenever ensure_schema() gains or changes DDL. It gates the full
+ * sweep: replaying ~25 CREATE/ALTER statements on every request cost roughly
+ * 100 ms per call and took metadata locks under load.
+ */
+const STUDYSYNC_SCHEMA_REVISION = '1';
+
+/**
  * Kết nối PDO dùng chung cho mỗi request (singleton).
  *
  * Hỗ trợ:
@@ -53,8 +60,37 @@ function db(): PDO
         throw new RuntimeException('DB_DRIVER không hợp lệ. Chỉ hỗ trợ sqlite hoặc mysql.');
     }
 
-    ensure_schema($pdo, $driver);
+    ensure_schema_once($pdo, $driver);
     return $pdo;
+}
+
+/** Runs ensure_schema() only when the stored schema revision is missing or stale. */
+function ensure_schema_once(PDO $pdo, string $driver): void
+{
+    $appMeta = $driver === 'mysql'
+        ? 'CREATE TABLE IF NOT EXISTS `app_meta` (
+                `meta_key` VARCHAR(64) NOT NULL,
+                `meta_value` VARCHAR(255) NOT NULL,
+                `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (`meta_key`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
+        : 'CREATE TABLE IF NOT EXISTS `app_meta` (
+                `meta_key` TEXT NOT NULL PRIMARY KEY,
+                `meta_value` TEXT NOT NULL,
+                `updated_at` TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )';
+    $pdo->exec($appMeta);
+
+    $stored = $pdo->prepare('SELECT meta_value FROM app_meta WHERE meta_key = ? LIMIT 1');
+    $stored->execute(['schema_revision']);
+    if ((string) $stored->fetchColumn() === STUDYSYNC_SCHEMA_REVISION) return;
+
+    ensure_schema($pdo, $driver);
+
+    $mark = $driver === 'mysql'
+        ? 'INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE meta_value = VALUES(meta_value)'
+        : 'INSERT INTO app_meta (meta_key, meta_value) VALUES (?, ?) ON CONFLICT(meta_key) DO UPDATE SET meta_value = excluded.meta_value';
+    $pdo->prepare($mark)->execute(['schema_revision', STUDYSYNC_SCHEMA_REVISION]);
 }
 
 function ensure_schema(PDO $pdo, string $driver): void
@@ -209,11 +245,14 @@ function ensure_schema(PDO $pdo, string $driver): void
                 CONSTRAINT `fk_mentions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
+        // utf8mb4_bin là bắt buộc: dưới collation unicode_ci, mọi emoji so sánh
+        // bằng nhau ('👍' = '🔥' trả về 1), khiến GROUP BY gộp lẫn biểu cảm và
+        // điều kiện toggle xoá nhầm biểu cảm khác của cùng một người dùng.
         $pdo->exec(
             'CREATE TABLE IF NOT EXISTS `message_reactions` (
                 `message_id` BIGINT UNSIGNED NOT NULL,
                 `user_id` INT UNSIGNED NOT NULL,
-                `emoji` VARCHAR(16) NOT NULL,
+                `emoji` VARCHAR(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
                 `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (`message_id`, `user_id`, `emoji`),
                 KEY `idx_message_reactions_message` (`message_id`),
@@ -221,6 +260,12 @@ function ensure_schema(PDO $pdo, string $driver): void
                 CONSTRAINT `fk_reactions_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
+        try {
+            $pdo->exec('ALTER TABLE `message_reactions` MODIFY `emoji` VARCHAR(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL');
+        } catch (PDOException $error) {
+            $driverCode = (int) ($error->errorInfo[1] ?? 0);
+            if ($driverCode !== 1091) throw $error;
+        }
         $pdo->exec(
             'CREATE TABLE IF NOT EXISTS `message_reads` (
                 `group_id` INT UNSIGNED NOT NULL, `user_id` INT UNSIGNED NOT NULL,

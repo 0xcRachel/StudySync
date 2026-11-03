@@ -11,8 +11,13 @@ run_api(static function (): void {
     $pdo = db();
     $me = require_auth();
     require_group_member($pdo, $groupId, $me['id']);
+    $existingTask = find_task($pdo, $id);
+    // Without this guard the UPDATE matches no row and the endpoint would
+    // report success while echoing back another group's task.
+    if ($existingTask === null || $existingTask['group_id'] !== $groupId) {
+        throw new ApiException(404, 'Không tìm thấy công việc trong nhóm này.');
+    }
     $statement = $pdo->prepare('UPDATE `tasks` SET title = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND group_id = ?');
     $statement->execute([$title, $status, $id, $groupId]);
-    if ($statement->rowCount() === 0 && find_task($pdo, $id) === null) throw new ApiException(404, 'Không tìm thấy công việc.');
     send_json(['success' => true, 'data' => find_task($pdo, $id)]);
 });
