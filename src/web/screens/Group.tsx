@@ -14,7 +14,7 @@ import {
 import { refreshScrollTriggers, scrollToBottom, scrollToOffset, useTabsInk } from '../lib/motion';
 import { useToast } from '../components/Toast';
 import { TaskRow } from '../components/TaskRow';
-import { Avatar, EmptyState, ErrorBar, SkeletonRows } from '../components/ui';
+import { Avatar, EmptyState, ErrorBar, Icon, SkeletonRows } from '../components/ui';
 import { useGroupRealtime } from '../../lib/useGroupRealtime';
 
 type Tab = 'tasks' | 'chat' | 'members';
@@ -814,10 +814,10 @@ export function GroupScreen({
                         {continuation ? null : <span className="msg-time">{formatTime(message.created_at)}{message.edited_at ? ' · đã sửa' : ''}</span>}
                         {continuation && message.edited_at ? <span className="msg-time">đã sửa</span> : null}
                         <div className="msg-actions">
-                            <div className="reaction-anchor"><button type="button" className="msg-action" onClick={() => setReactionPickerId((current) => current === message.id ? null : message.id)} aria-label="Thả biểu cảm" aria-expanded={reactionPickerId === message.id}>☺</button>{reactionPickerId === message.id ? <div className="message-reaction-menu">{CHAT_REACTIONS.map((emoji) => <button type="button" key={emoji} onClick={() => void reactToMessage(message, emoji)}>{emoji}</button>)}</div> : null}</div>
-                            <button type="button" className="msg-action" onClick={() => { setReplyTarget(message); window.requestAnimationFrame(() => chatInputRef.current?.focus()); }} aria-label={`Trả lời ${message.sender_name}`}>↩</button>
-                            {message.sender_id === user.id ? <button type="button" className="msg-action" onClick={() => startEditingMessage(message)} aria-label="Sửa tin nhắn">✎</button> : null}
-                            {message.sender_id === user.id || canModerate ? <button type="button" className={deleteConfirmId === message.id ? 'msg-action danger confirm' : 'msg-action danger'} onClick={() => void removeMessage(message)} aria-label={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'}>{deleteConfirmId === message.id ? 'Xóa?' : '×'}</button> : null}
+                            <div className="reaction-anchor"><button type="button" className="msg-action" onClick={() => setReactionPickerId((current) => current === message.id ? null : message.id)} aria-label="Thả biểu cảm" aria-expanded={reactionPickerId === message.id} title="Thả biểu cảm"><Icon name="smiley" /></button>{reactionPickerId === message.id ? <div className="message-reaction-menu">{CHAT_REACTIONS.map((emoji) => <button type="button" key={emoji} onClick={() => void reactToMessage(message, emoji)}>{emoji}</button>)}</div> : null}</div>
+                            <button type="button" className="msg-action" onClick={() => { setReplyTarget(message); window.requestAnimationFrame(() => chatInputRef.current?.focus()); }} aria-label={`Trả lời ${message.sender_name}`} title={`Trả lời ${message.sender_name}`}><Icon name="reply" /></button>
+                            {message.sender_id === user.id ? <button type="button" className="msg-action" onClick={() => startEditingMessage(message)} aria-label="Sửa tin nhắn" title="Sửa tin nhắn"><Icon name="pencil" /></button> : null}
+                            {message.sender_id === user.id || canModerate ? <button type="button" className={deleteConfirmId === message.id ? 'msg-action danger confirm' : 'msg-action danger'} onClick={() => void removeMessage(message)} aria-label={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'} title={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'}>{deleteConfirmId === message.id ? 'Xóa?' : <Icon name="trash" />}</button> : null}
                         </div>
                       </div>
                       {message.reply_to ? <div className="msg-reply-quote"><span className="reply-connector" aria-hidden="true" /><Avatar name={message.reply_to.sender_name} url={message.reply_to.avatar_url} size={18} /><span><strong>{message.reply_to.sender_name}</strong><span className="reply-preview">{message.reply_to.body || 'Ảnh đính kèm'}</span></span></div> : null}
@@ -835,22 +835,22 @@ export function GroupScreen({
           {Object.keys(typingUsers).length > 0 ? <p className="chat-typing" aria-live="polite">{Object.values(typingUsers).join(', ')} đang nhập…</p> : null}
           <form className="chat-form" onSubmit={submitMessage}>
             <input ref={imageInputRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={chooseImage} aria-label="Chọn ảnh để gửi" />
-            {replyTarget ? <div className="chat-compose-context"><span className="replying-label">Đang trả lời <strong>{replyTarget.sender_name}</strong><span className="replying-preview">{replyTarget.body || 'Ảnh đính kèm'}</span></span><button type="button" className="context-close" onClick={() => setReplyTarget(null)} aria-label="Huỷ trả lời">×</button></div> : null}
-            {selectedImage ? <div className="chat-image-preview"><img src={imagePreviewUrl} alt="Ảnh sắp gửi" /><span>{selectedImage.name}<small>{(selectedImage.size / 1024 / 1024).toFixed(2)} MB · tối đa 5 MB</small></span><button type="button" className="context-close" onClick={() => { setSelectedImage(null); setImagePreviewUrl(''); if (imageInputRef.current) imageInputRef.current.value = ''; }} aria-label="Bỏ ảnh">×</button></div> : null}
+            {replyTarget ? <div className="chat-compose-context"><span className="replying-label">Đang trả lời <strong>{replyTarget.sender_name}</strong><span className="replying-preview">{replyTarget.body || 'Ảnh đính kèm'}</span></span><button type="button" className="context-close" onClick={() => setReplyTarget(null)} aria-label="Huỷ trả lời" title="Huỷ trả lời"><Icon name="close" size={15} /></button></div> : null}
+            {selectedImage ? <div className="chat-image-preview"><img src={imagePreviewUrl} alt="Ảnh sắp gửi" /><span>{selectedImage.name}<small>{(selectedImage.size / 1024 / 1024).toFixed(2)} MB · tối đa 5 MB</small></span><button type="button" className="context-close" onClick={() => { setSelectedImage(null); setImagePreviewUrl(''); if (imageInputRef.current) imageInputRef.current.value = ''; }} aria-label="Bỏ ảnh" title="Bỏ ảnh"><Icon name="close" size={15} /></button></div> : null}
             <div className="chat-compose-row">
-              <button type="button" className="chat-tool" onClick={() => imageInputRef.current?.click()} disabled={sending} aria-label="Đính kèm ảnh" title="Đính kèm ảnh">＋</button>
+              <button type="button" className="chat-tool" onClick={() => imageInputRef.current?.click()} disabled={sending} aria-label="Đính kèm ảnh" title="Đính kèm ảnh"><Icon name="image" /></button>
               <div className="chat-text-wrap">
                 <textarea ref={chatInputRef} className="chat-textarea" value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={replyTarget ? `Trả lời ${replyTarget.sender_name}…` : 'Nhắn tin cho nhóm…'} aria-label="Tin nhắn mới" maxLength={4000} />
                 {mentionOptions.length > 0 ? <div className="mention-menu" role="listbox" aria-label="Gợi ý thành viên">{mentionOptions.map((member) => <button type="button" key={member.id} role="option" className="mention-option" onClick={() => insertMention(member.name)}><Avatar name={member.name} url={member.avatar_url} size={26} /><span>{member.name}<small>@{member.username ?? member.name.toLocaleLowerCase().replace(/\s+/g, '')}</small></span></button>)}</div> : null}
                 <div className="chat-toolbar">
                   <span>Enter để gửi · Shift+Enter xuống dòng</span>
                   <div className="chat-tools-popovers">
-                    <div className="chat-popover-anchor"><button type="button" className="chat-tool" onClick={() => { setEmojiOpen((open) => !open); setGiftOpen(false); }} aria-label="Chọn emoji" title="Emoji">☺</button>{emojiOpen ? <div className="emoji-menu" aria-label="Chọn emoji">{CHAT_EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => insertEmoji(emoji)} aria-label={`Chèn ${emoji}`}>{emoji}</button>)}</div> : null}</div>
-                    <div className="chat-popover-anchor"><button type="button" className="chat-tool" onClick={() => { setGiftOpen((open) => !open); setEmojiOpen(false); }} aria-label="Gửi quà" title="Quà tặng">🎁</button>{giftOpen ? <div className="gift-menu" aria-label="Chọn quà">{CHAT_GIFTS.map((gift) => <button type="button" key={gift.label} onClick={() => sendGift(gift)}><span>{gift.icon}</span>{gift.label}</button>)}</div> : null}</div>
+                    <div className="chat-popover-anchor"><button type="button" className="chat-tool" onClick={() => { setEmojiOpen((open) => !open); setGiftOpen(false); }} aria-label="Chọn emoji" title="Emoji" aria-expanded={emojiOpen}><Icon name="smiley" /></button>{emojiOpen ? <div className="emoji-menu" aria-label="Chọn emoji">{CHAT_EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => insertEmoji(emoji)} aria-label={`Chèn ${emoji}`}>{emoji}</button>)}</div> : null}</div>
+                    <div className="chat-popover-anchor"><button type="button" className="chat-tool" onClick={() => { setGiftOpen((open) => !open); setEmojiOpen(false); }} aria-label="Gửi quà" title="Quà tặng" aria-expanded={giftOpen}><Icon name="gift" /></button>{giftOpen ? <div className="gift-menu" aria-label="Chọn quà">{CHAT_GIFTS.map((gift) => <button type="button" key={gift.label} onClick={() => sendGift(gift)}><span>{gift.icon}</span>{gift.label}</button>)}</div> : null}</div>
                   </div>
                 </div>
               </div>
-              <button type="submit" className="chat-send" disabled={sending || (chatDraft.trim().length === 0 && !selectedImage)} aria-label="Gửi tin nhắn">{sending ? '…' : '↑'}</button>
+              <button type="submit" className="chat-send" disabled={sending || (chatDraft.trim().length === 0 && !selectedImage)} aria-label="Gửi tin nhắn" title="Gửi tin nhắn">{sending ? <span className="send-dots">…</span> : <Icon name="send" size={17} />}</button>
             </div>
           </form>
         </section>
