@@ -1,6 +1,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -42,13 +43,42 @@ const initials = (name: string) =>
     .join("")
     .toUpperCase() || "?";
 const statusLabel = { todo: "Cần làm", doing: "Đang làm", done: "Hoàn thành" };
+const roleLabel: Record<string, string> = {
+  owner: "Chủ nhóm",
+  admin: "Quản trị",
+  member: "Thành viên",
+};
+const weekdayNames = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
 
-function Avatar({ name, size = 42 }: { name: string; size?: number }) {
+function todayLabel() {
+  const now = new Date();
+  return `${weekdayNames[now.getDay()]} · ${now.getDate()} tháng ${now.getMonth() + 1}`.toUpperCase();
+}
+
+function Avatar({
+  name,
+  url,
+  size = 42,
+}: {
+  name: string;
+  url?: string | null;
+  size?: number;
+}) {
+  const shape = { width: size, height: size, borderRadius: size / 2 };
+  if (url && url.startsWith("https://")) {
+    return (
+      <Image
+        source={{ uri: url }}
+        style={[shape, styles.avatarImage]}
+        accessibilityLabel={name}
+      />
+    );
+  }
   return (
     <View
       style={[
         styles.avatar,
-        { width: size, height: size, borderRadius: size / 2 },
+        shape,
       ]}
     >
       <Text style={[styles.avatarText, { fontSize: size * 0.32 }]}>
@@ -224,13 +254,13 @@ function HomeScreen({
     >
       <View style={styles.topRow}>
         <View>
-          <Text style={styles.mutedUpper}>THỨ BẢY · 24 THÁNG 10</Text>
+          <Text style={styles.mutedUpper}>{todayLabel()}</Text>
           <Text style={styles.greeting}>
             Xin chào, {user.name.split(" ")[0]}{" "}
             <Text style={{ color: C.pink }}>✦</Text>
           </Text>
         </View>
-        <Avatar name={user.name} />
+        <Avatar name={user.name} url={user.avatar_url} />
       </View>
       <View style={styles.heroCard}>
         <View>
@@ -590,7 +620,7 @@ function GroupScreen({
           <Text style={styles.mutedUpper}>STUDY SPACE</Text>
           <Text style={styles.headerTitle}>{group.name}</Text>
         </View>
-        <Avatar name={user.name} size={36} />
+        <Avatar name={user.name} url={user.avatar_url} size={36} />
       </View>
       <View style={styles.groupHero}>
         <View style={styles.groupIconLarge}>
@@ -768,7 +798,7 @@ function GroupScreen({
               <Text style={styles.sectionTitle}>Mời bạn bè vào nhóm</Text>
               {inviteCandidates.map((person) => (
                 <View key={person.id} style={styles.member}>
-                  <Avatar name={person.name} size={38} />
+                  <Avatar name={person.name} url={person.avatar_url} size={38} />
                   <View style={styles.flex}>
                     <Text style={styles.taskTitle}>{person.name}</Text>
                     <Text style={styles.pageSubtitle}>{person.email}</Text>
@@ -787,11 +817,11 @@ function GroupScreen({
           ) : null}
           {members.map((member) => (
             <View key={member.id} style={styles.member}>
-              <Avatar name={member.name} size={38} />
+              <Avatar name={member.name} url={member.avatar_url} size={38} />
               <View style={styles.flex}>
                 <Text style={styles.taskTitle}>{member.name}</Text>
                 <Text style={styles.pageSubtitle}>
-                  {member.role} · {member.email}
+                  {roleLabel[member.role] ?? member.role} · {member.email}
                 </Text>
               </View>
             </View>
@@ -986,7 +1016,7 @@ export function AppShell() {
         </View>
         {friends.friends?.map((friend: any) => (
           <View key={friend.id} style={styles.member}>
-            <Avatar name={friend.name} />
+            <Avatar name={friend.name} url={friend.avatar_url} />
             <View style={styles.flex}>
               <Text style={styles.taskTitle}>{friend.name}</Text>
               <Text style={styles.pageSubtitle}>{friend.email}</Text>
@@ -1026,7 +1056,7 @@ export function AppShell() {
     content = (
       <SimpleScreen title="Hồ sơ" subtitle="Không gian cá nhân của bạn.">
         <View style={styles.profileHero}>
-          <Avatar name={session.user.name} size={76} />
+          <Avatar name={session.user.name} url={session.user.avatar_url} size={76} />
           <Text style={styles.profileName}>{session.user.name}</Text>
           <Text style={styles.pageSubtitle}>{session.user.email}</Text>
         </View>
@@ -1034,6 +1064,9 @@ export function AppShell() {
           title="Đăng xuất"
           secondary
           onPress={() => {
+            // Xóa phiên cục bộ mà không gọi /logout.php thì token vẫn còn sống
+            // trên server — rủi ro thật nếu dùng chung thiết bị.
+            void api.logout(session.token).catch(() => undefined);
             setSession(null);
             setScreen("home");
           }}
@@ -1361,6 +1394,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#5365B5",
+  },
+  avatarImage: {
+    resizeMode: "cover",
+    backgroundColor: "#273568",
   },
   avatarText: { color: C.cyan, fontWeight: "900" },
   heroCard: {
