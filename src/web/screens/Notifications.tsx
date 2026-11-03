@@ -1,148 +1,58 @@
-import { useEffect, useState } from 'react';
-import * as api from '../lib/api';
-import type { GroupInvitation, Notification } from '../lib/api';
+import { useState } from 'react';
+import type { Notification } from '../lib/api';
+import type { Notifications as NotificationsState } from '../lib/useNotifications';
 import { relative } from '../lib/format';
 import { useToast } from '../components/Toast';
 import { EmptyState, ErrorBar, SkeletonRows } from '../components/ui';
 
 export function Notifications({
-  token,
-  onUnreadChange,
+  notifications,
   onOpenGroup,
   onOpenFriends,
   onGroupsChanged,
 }: {
-  token: string;
-  onUnreadChange: (count: number) => void;
+  notifications: NotificationsState;
   onOpenGroup: (groupId: number) => void;
   onOpenFriends: () => void;
   onGroupsChanged: () => void;
 }) {
   const toast = useToast();
-  const [items, setItems] = useState<Notification[]>([]);
-  const [invites, setInvites] = useState<GroupInvitation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [reloadKey, setReloadKey] = useState(0);
-  const [markingAll, setMarkingAll] = useState(false);
+  const {
+    items,
+    invitations,
+    unreadCount,
+    loading,
+    error,
+    reload,
+    markRead,
+    markAllRead,
+    answerInvitation,
+  } = notifications;
   const [busyInvite, setBusyInvite] = useState<number | null>(null);
 
-  const unread = items.filter((item) => !item.read_at).length;
-
-  useEffect(() => {
-    onUnreadChange(unread);
-  }, [unread, onUnreadChange]);
-
-  useEffect(() => {
-    const onNotification = (event: Event) => {
-      const notification = (event as CustomEvent<Notification>).detail;
-      if (!notification) return;
-      setItems((current) => [notification, ...current.filter((item) => item.id !== notification.id)].slice(0, 100));
-      if (notification.type === 'group_invitation') {
-        void api.getGroupInvitations(token)
-          .then((list) => setInvites(list.filter((invite) => invite.status === 'pending')))
-          .catch(() => { /* lần tải nền tiếp theo sẽ đồng bộ lại lời mời */ });
-      }
-    };
-    window.addEventListener('studysync:notification', onNotification);
-    return () => window.removeEventListener('studysync:notification', onNotification);
-  }, [token]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let active = true;
-
-    void (async () => {
-      try {
-        const list = await api.getNotifications(token, controller.signal);
-        if (active) setItems(list);
-      } catch (caught) {
-        if (!active || controller.signal.aborted) return;
-        setError(caught instanceof Error ? caught.message : 'Không tải được thông báo.');
-      } finally {
-        if (active) setLoading(false);
-      }
-
-      if (!active) return;
-      try {
-        const list = await api.getGroupInvitations(token, controller.signal);
-        if (active) setInvites(list.filter((invite) => invite.status === 'pending'));
-      } catch {
-        /* máy chủ cũ chưa có endpoint lời mời nhóm: ẩn phần này */
-      }
-    })();
-
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [token, reloadKey]);
-
-  const reload = () => {
-    setLoading(true);
-    setError('');
-    setReloadKey((key) => key + 1);
-  };
-
-  const markRead = async (item: Notification) => {
-    if (item.read_at) return;
-    setItems((current) =>
-      current.map((entry) =>
-        entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry,
-      ),
-    );
-    try {
-      await api.markNotificationRead(item.id, token);
-    } catch {
-      toast('Chưa đánh dấu đọc được thông báo này.', 'bad');
-      setReloadKey((key) => key + 1);
-    }
-  };
-
   const open = (item: Notification) => {
-    void markRead(item);
+    void markRead(item.id);
     if (item.type.startsWith('friend')) {
       onOpenFriends();
       return;
     }
+    // Lời mời nhóm được trả lời bằng nút riêng bên trên; điều hướng vào nhóm mà
+    // người dùng chưa tham gia chỉ tổ nhận lỗi 403.
     if (item.type === 'group_invitation') return;
     const groupId = Number(item.data?.group_id);
     if (Number.isInteger(groupId) && groupId > 0) onOpenGroup(groupId);
   };
 
-  const readAll = async () => {
-    if (markingAll || unread === 0) return;
-    setMarkingAll(true);
-    const stamp = new Date().toISOString();
-    setItems((current) =>
-      current.map((entry) =>
-        entry.read_at ? entry : { ...entry, read_at: stamp },
-      ),
-    );
-    try {
-      await api.markAllNotificationsRead(token);
-    } catch {
-      toast('Chưa đánh dấu được tất cả thông báo.', 'bad');
-      setReloadKey((key) => key + 1);
-    } finally {
-      setMarkingAll(false);
-    }
-  };
-
-  const answerInvite = async (invite: GroupInvitation, action: 'accept' | 'decline') => {
+  const answer = async (invitationId: number, action: 'accept' | 'decline') => {
     if (busyInvite !== null) return;
-    setBusyInvite(invite.id);
+    setBusyInvite(invitationId);
     try {
-      await api.respondGroupInvitation(invite.id, action, token);
-      setInvites((current) => current.filter((entry) => entry.id !== invite.id));
-      toast(
-        action === 'accept'
-          ? `Đã vào nhóm ${invite.group_name}.`
-          : `Đã từ chối lời mời vào ${invite.group_name}.`,
-      );
+      await answerInvitation(invitationId, action);
+      toast(action === 'accept' ? 'Đã vào nhóm.' : 'Đã từ chối lời mời.');
       if (action === 'accept') onGroupsChanged();
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : 'Không xử lý được lời mời.', 'bad');
+      reload();
     } finally {
       setBusyInvite(null);
     }
@@ -157,15 +67,15 @@ export function Notifications({
         </div>
         <div className="actions">
           <span className="micro faint num">
-            {unread > 0 ? `${unread} chưa đọc` : 'Đã đọc hết'}
+            {unreadCount > 0 ? `${unreadCount} chưa đọc` : 'Đã đọc hết'}
           </span>
           <button
             type="button"
             className="btn-quiet"
-            onClick={() => void readAll()}
-            disabled={unread === 0 || markingAll}
+            onClick={() => void markAllRead()}
+            disabled={unreadCount === 0}
           >
-            {markingAll ? 'Đang đánh dấu…' : 'Đọc tất cả'}
+            Đọc tất cả
           </button>
         </div>
       </div>
@@ -176,18 +86,18 @@ export function Notifications({
         </div>
       ) : null}
 
-      {invites.length > 0 ? (
+      {invitations.length > 0 ? (
         <section>
           <div className="shead tight">
             <h2 className="h2">Lời mời vào nhóm</h2>
-            <span className="micro faint num">{invites.length}</span>
+            <span className="micro faint num">{invitations.length}</span>
           </div>
-          {invites.map((invite) => (
-            <div className="invite" key={invite.id}>
+          {invitations.map((invitation) => (
+            <div className="invite" key={invitation.id}>
               <div className="invite-main">
-                <div className="invite-title">{invite.group_name}</div>
+                <div className="invite-title">{invitation.group_name}</div>
                 <div className="invite-meta">
-                  {invite.inviter_name} mời bạn · {relative(invite.created_at)}
+                  {invitation.inviter_name} mời bạn · {relative(invitation.created_at)}
                 </div>
               </div>
               <div className="rowacts">
@@ -195,7 +105,7 @@ export function Notifications({
                   type="button"
                   className="btn btn-sm"
                   disabled={busyInvite !== null}
-                  onClick={() => void answerInvite(invite, 'accept')}
+                  onClick={() => void answer(invitation.id, 'accept')}
                 >
                   Tham gia
                 </button>
@@ -203,7 +113,7 @@ export function Notifications({
                   type="button"
                   className="btn-quiet"
                   disabled={busyInvite !== null}
-                  onClick={() => void answerInvite(invite, 'decline')}
+                  onClick={() => void answer(invitation.id, 'decline')}
                 >
                   Từ chối
                 </button>
@@ -215,7 +125,7 @@ export function Notifications({
 
       {loading ? (
         <SkeletonRows rows={4} />
-      ) : items.length === 0 && !error && invites.length === 0 ? (
+      ) : items.length === 0 && !error && invitations.length === 0 ? (
         <EmptyState title="Chưa có thông báo nào.">
           Khi ai đó mời bạn vào nhóm, kết bạn, hoặc nhắc tới bạn, thông tin sẽ nằm ở đây.
         </EmptyState>

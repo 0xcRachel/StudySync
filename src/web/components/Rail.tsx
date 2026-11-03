@@ -1,5 +1,7 @@
 import type { Group, User } from '../lib/api';
+import type { Notifications } from '../lib/useNotifications';
 import type { Route } from '../lib/routing';
+import { NotificationCenter } from './NotificationCenter';
 import { Avatar, Brand } from './ui';
 
 const NAV = [
@@ -14,17 +16,24 @@ type Props = {
   groups: Group[];
   route: Route;
   unread: number;
+  notifications: Notifications;
   onNavigate: (route: Route) => void;
   onNewGroup: () => void;
   onStartTour: () => void;
   onLogout: () => void;
+  onGroupsChanged: () => void;
 };
 
-export function Rail({ user, groups, route, unread, onNavigate, onNewGroup, onStartTour, onLogout }: Props) {
+export function Rail({ user, groups, route, unread, notifications, onNavigate, onNewGroup, onStartTour, onLogout, onGroupsChanged }: Props) {
   return (
     <aside className="rail">
       <div className="rail-brand">
         <Brand />
+        <NotificationCenter
+          notifications={notifications}
+          onNavigate={onNavigate}
+          onGroupsChanged={onGroupsChanged}
+        />
       </div>
 
       <div className="rail-section rail-groups">
@@ -91,17 +100,38 @@ export function Rail({ user, groups, route, unread, onNavigate, onNewGroup, onSt
   );
 }
 
-export function MobileHead({ user, onProfile, onStartTour }: { user: User; onProfile: () => void; onStartTour: () => void }) {
+export function MobileHead({
+  user,
+  notifications,
+  onProfile,
+  onNavigate,
+  onStartTour,
+  onGroupsChanged,
+}: {
+  user: User;
+  notifications: Notifications;
+  onProfile: () => void;
+  onNavigate: (route: Route) => void;
+  onStartTour: () => void;
+  onGroupsChanged: () => void;
+}) {
   return (
     <header className="mhead">
       <Brand />
-      <button type="button" className="mhead-help" onClick={onStartTour} aria-label="Hướng dẫn sử dụng">
-        ?
-      </button>
-      <button type="button" className="mhead-user" onClick={onProfile} aria-label="Mở hồ sơ">
-        <span className="mhead-name micro faint">{user.name}</span>
-        <Avatar name={user.name} url={user.avatar_url} size={26} />
-      </button>
+      <div className="mhead-actions">
+        <NotificationCenter
+          notifications={notifications}
+          onNavigate={onNavigate}
+          onGroupsChanged={onGroupsChanged}
+        />
+        <button type="button" className="mhead-help" onClick={onStartTour} aria-label="Hướng dẫn sử dụng">
+          ?
+        </button>
+        <button type="button" className="mhead-user" onClick={onProfile} aria-label="Mở hồ sơ">
+          <span className="mhead-name micro faint">{user.name}</span>
+          <Avatar name={user.name} url={user.avatar_url} size={26} />
+        </button>
+      </div>
     </header>
   );
 }

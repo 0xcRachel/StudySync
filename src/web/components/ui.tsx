@@ -49,9 +49,18 @@ export type IconName =
   | 'plus'
   | 'gift'
   | 'send'
-  | 'image';
+  | 'image'
+  | 'bell'
+  | 'chevron';
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
+  bell: (
+    <>
+      <path d="M6.2 8.4a3.8 3.8 0 0 1 7.6 0c0 3.4 1.3 4.6 1.3 4.6H4.9s1.3-1.2 1.3-4.6z" />
+      <path d="M8.6 15.4a1.6 1.6 0 0 0 2.8 0" />
+    </>
+  ),
+  chevron: <path d="M6.5 8.5 10 12l3.5-3.5" />,
   smiley: (
     <>
       <circle cx="10" cy="10" r="6.75" />

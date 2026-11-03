@@ -7,6 +7,8 @@ import type { Session } from './lib/session';
 import { HOME, parseHash, routeKey, routeToHash } from './lib/routing';
 import type { Route } from './lib/routing';
 import { usePageMotion } from './lib/motion';
+import { useNotifications } from './lib/useNotifications';
+import type { Notifications as NotificationsState } from './lib/useNotifications';
 import { CSS, FONT_HREF } from './styles';
 import { ToastProvider, useToast } from './components/Toast';
 import { useUserRealtime } from '../lib/useUserRealtime';
@@ -112,14 +114,13 @@ type ShellProps = {
   groups: Group[];
   groupsLoading: boolean;
   groupsError: string | null;
-  unread: number;
+  notifications: NotificationsState;
   createIntent: number;
   onNavigate: (route: Route) => void;
   onCreateGroup: (name: string, description: string) => Promise<void>;
   onReloadGroups: () => void;
   onNewGroup: () => void;
   onTasksChanged: () => void;
-  onUnreadChange: (count: number) => void;
   onUserChange: (user: User) => void;
   onLogout: () => void;
   onStartTour: () => void;
@@ -131,14 +132,13 @@ function AppShell({
   groups,
   groupsLoading,
   groupsError,
-  unread,
+  notifications,
   createIntent,
   onNavigate,
   onCreateGroup,
   onReloadGroups,
   onNewGroup,
   onTasksChanged,
-  onUnreadChange,
   onUserChange,
   onLogout,
   onStartTour,
@@ -173,14 +173,23 @@ function AppShell({
         user={user}
         groups={groups}
         route={route}
-        unread={unread}
+        unread={notifications.unreadCount}
+        notifications={notifications}
         onNavigate={onNavigate}
         onNewGroup={onNewGroup}
         onStartTour={onStartTour}
         onLogout={onLogout}
+        onGroupsChanged={onTasksChanged}
       />
 
-      <MobileHead user={user} onProfile={() => onNavigate({ name: 'profile' })} onStartTour={onStartTour} />
+      <MobileHead
+        user={user}
+        notifications={notifications}
+        onProfile={() => onNavigate({ name: 'profile' })}
+        onNavigate={onNavigate}
+        onStartTour={onStartTour}
+        onGroupsChanged={onTasksChanged}
+      />
 
       <main className="main" id="main" tabIndex={-1}>
         <div className="page" ref={pageRef}>
@@ -240,8 +249,7 @@ function AppShell({
 
           {route.name === 'notifications' ? (
             <Notifications
-              token={token}
-              onUnreadChange={onUnreadChange}
+              notifications={notifications}
               onOpenGroup={(groupId) => onNavigate({ name: 'group', groupId })}
               onOpenFriends={() => onNavigate({ name: 'friends' })}
               onGroupsChanged={onTasksChanged}
@@ -259,7 +267,7 @@ function AppShell({
         </div>
       </main>
 
-      <TabBar route={route} unread={unread} onNavigate={onNavigate} />
+      <TabBar route={route} unread={notifications.unreadCount} onNavigate={onNavigate} />
     </div>
   );
 }
@@ -274,19 +282,18 @@ function Workspace() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(() => readSession() !== null);
   const [groupsError, setGroupsError] = useState<string | null>(null);
-  const [unread, setUnread] = useState(0);
   const [createIntent, setCreateIntent] = useState(0);
   const [tourNonce, setTourNonce] = useState(0);
 
   const token = session?.token ?? null;
+  const notifications = useNotifications(token ?? '');
 
   const onRealtimeNotification = useCallback((notification: Notification) => {
+    // Chỉ phát sự kiện. useNotifications lắng nghe và tự nạp lại danh sách,
+    // nên không cần ở đây gọi thêm một lần /notifications.php để đếm số chưa
+    // đọc — đó chính là nguồn khiến badge và trang lệch nhau.
     window.dispatchEvent(new CustomEvent('studysync:notification', { detail: notification }));
-    if (!token) return;
-    void api.getNotifications(token)
-      .then((list) => setUnread(list.filter((item) => !item.read_at).length))
-      .catch(() => { /* màn hình liên quan vẫn nhận sự kiện live */ });
-  }, [token]);
+  }, []);
 
   useUserRealtime({ enabled: Boolean(token) && !booting, token: token ?? '', onNotification: onRealtimeNotification });
 
@@ -445,33 +452,6 @@ function Workspace() {
   };
 
   useEffect(() => {
-    if (!token) return undefined;
-    const controller = new AbortController();
-    let active = true;
-    const refreshUnread = async () => {
-      try {
-        const list = await api.getNotifications(token, controller.signal);
-        if (active) setUnread(list.filter((item) => !item.read_at).length);
-      } catch {
-        /* unread count is secondary to the current screen */
-      }
-    };
-    void refreshUnread();
-    const onVisibility = () => { if (document.visibilityState === 'visible') void refreshUnread(); };
-    document.addEventListener('visibilitychange', onVisibility);
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'hidden') return;
-      void refreshUnread();
-    }, 12000);
-    return () => {
-      active = false;
-      controller.abort();
-      window.clearInterval(interval);
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, [token]);
-
-  useEffect(() => {
     const sync = () => setRoute(parseHash(window.location.hash));
     window.addEventListener('popstate', sync);
     window.addEventListener('hashchange', sync);
@@ -486,7 +466,6 @@ function Workspace() {
       clearSession();
       setSession(null);
       setGroups([]);
-      setUnread(0);
       setBooting(false);
       setRoute(HOME);
       window.history.replaceState(null, '', '#/');
@@ -528,7 +507,6 @@ function Workspace() {
       setSession(next);
       setApiState('ok');
       setGroupsLoading(true);
-      setUnread(0);
       setRoute(HOME);
       window.history.replaceState(null, '', routeToHash(HOME));
       toast(`Chào ${firstName(next.user.name)}.`);
@@ -551,7 +529,6 @@ function Workspace() {
     clearSession();
     setSession(null);
     setGroups([]);
-    setUnread(0);
     setBooting(false);
     setGroupsLoading(false);
     setRoute(HOME);
@@ -594,14 +571,13 @@ function Workspace() {
       groups={groups}
       groupsLoading={groupsLoading}
       groupsError={groupsError}
-      unread={unread}
+      notifications={notifications}
       createIntent={createIntent}
       onNavigate={navigate}
       onCreateGroup={createGroup}
       onReloadGroups={reloadGroups}
       onNewGroup={openNewGroup}
       onTasksChanged={() => void loadGroups(true)}
-      onUnreadChange={setUnread}
       onUserChange={handleUserChange}
       onLogout={() => void logout()}
       onStartTour={startTour}
