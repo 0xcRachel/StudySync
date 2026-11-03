@@ -779,35 +779,19 @@ textarea.field {
 .msg-name { font-size: 12px; font-weight: 600; letter-spacing: -.01em; color: var(--ink-2); }
 .msg-time { font-size: 10.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .msg-bubble {
-  position: relative;
   min-width: 0;
   max-width: 100%;
   padding: 8px 12px;
   border: 1px solid var(--line);
-  border-radius: 2px 16px 16px 16px;
+  border-radius: 16px;
   background: var(--surface);
 }
-.msg.me .msg-bubble { border-color: #c7ddd0; border-radius: 16px 2px 16px 16px; background: var(--wash); }
-/* Đuôi trỏ về avatar: lớp ngoài màu viền + lớp trong màu nền, cùng tam giác lệch
-   1px để đường viền chạy liền từ bubble ra. Bề rộng 7px đúng bằng khe avatar↔bubble
-   ở bản mobile, nên đuôi không đè lên avatar. */
-.msg:not(.me) .msg-bubble::before,
-.msg:not(.me) .msg-bubble::after { content: ''; position: absolute; top: 0; clip-path: polygon(100% 0, 100% 100%, 0 100%); }
-.msg:not(.me) .msg-bubble::before { left: -7px; width: 7px; height: 11px; background: var(--line); }
-.msg:not(.me) .msg-bubble::after { left: -6px; width: 6px; height: 10px; background: var(--surface); }
-.msg.me .msg-bubble::before,
-.msg.me .msg-bubble::after { content: ''; position: absolute; top: 0; clip-path: polygon(0 0, 0 100%, 100% 100%); }
-.msg.me .msg-bubble::before { right: -7px; width: 7px; height: 11px; background: #c7ddd0; }
-.msg.me .msg-bubble::after { right: -6px; width: 6px; height: 10px; background: var(--wash); }
-.msg-bubble.media-only { padding: 4px; border-radius: 16px; }
-.msg-bubble.media-only::before, .msg-bubble.media-only::after { display: none; }
+.msg.me .msg-bubble { border-color: #c7ddd0; background: var(--wash); }
+.msg-bubble.media-only { padding: 4px; }
 .msg-body { margin: 0; font-size: 14.5px; line-height: 1.56; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg.me .msg-body { color: var(--ink); }
 .msg.me .msg-name::after { content: ' · bạn'; color: var(--ink-3); font-weight: 400; }
 .msg[data-continuation="true"] { margin-bottom: 4px; }
-/* Tin gom nhóm vẫn giữ đuôi, nên góc phía avatar phải ở lại 2px. */
-.msg[data-continuation="true"] .msg-bubble { border-radius: 2px 16px 16px 16px; }
-.msg[data-continuation="true"].me .msg-bubble { border-radius: 16px 2px 16px 16px; }
 .msg-gutter { position: relative; flex: none; width: 30px; display: grid; place-items: center; padding-top: 10px; }
 .msg-gutter::before { content: ''; position: absolute; top: -9px; bottom: -13px; left: 50%; width: 1px; background: rgba(206,211,201,.9); }
 .msg-hover-time { color: var(--ink-3); font-size: 9px; font-variant-numeric: tabular-nums; opacity: 0; transition: opacity .16s ease; }
