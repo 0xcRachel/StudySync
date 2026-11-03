@@ -21,21 +21,31 @@ function normalizeBaseUrl(value: string): string {
 }
 
 const configuredBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+const configuredWebBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL_WEB?.trim();
 
+/**
+ * EXPO_PUBLIC_API_BASE_URL là địa chỉ cho ĐIỆN THOẠI thật, nên nó thường mang
+ * IP LAN. Trình duyệt chạy trên chính máy đó và luôn gọi được localhost, còn IP
+ * LAN thì đổi mỗi lần chuyển mạng — một file .env cũ sẽ làm web app timeout âm
+ * thầm. Vì vậy web bỏ qua IP LAN trừ khi được khai báo rõ ràng.
+ */
 export const API_BASE_URL = normalizeBaseUrl(
-  configuredBaseUrl || `http://${DEFAULT_DEV_HOST}:${DEFAULT_DEV_PORT}`,
+  Platform.OS === 'web'
+    ? configuredWebBaseUrl || `http://localhost:${DEFAULT_DEV_PORT}`
+    : configuredBaseUrl || `http://${DEFAULT_DEV_HOST}:${DEFAULT_DEV_PORT}`,
 );
 
-const configuredRealtimeUrl = process.env.EXPO_PUBLIC_REALTIME_URL?.trim();
 const realtimeUrl = new URL(API_BASE_URL);
 realtimeUrl.protocol = realtimeUrl.protocol === 'https:' ? 'wss:' : 'ws:';
 realtimeUrl.port = process.env.EXPO_PUBLIC_REALTIME_PORT?.trim() || '8090';
 realtimeUrl.pathname = '/';
 realtimeUrl.search = '';
 realtimeUrl.hash = '';
-export const REALTIME_URL = configuredRealtimeUrl || realtimeUrl.toString().replace(/\/$/, '');
+export const REALTIME_URL = realtimeUrl.toString().replace(/\/$/, '');
 
-export const API_BASE_URL_IS_CONFIGURED = Boolean(configuredBaseUrl);
+export const API_BASE_URL_IS_CONFIGURED = Boolean(
+  Platform.OS === 'web' ? configuredWebBaseUrl : configuredBaseUrl,
+);
 
 const configuredTimeout = Number(process.env.EXPO_PUBLIC_API_TIMEOUT_MS);
 
