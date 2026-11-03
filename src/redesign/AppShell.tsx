@@ -1,11 +1,13 @@
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,14 +15,20 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { NavigationContainer, useNavigation } from "@react-navigation/native";
+import type {
+  NativeStackNavigationProp,
+  NativeStackScreenProps,
+} from "@react-navigation/native-stack";
+import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import * as api from "./api";
 import { clearSession, readSession, writeSession } from "./session";
 import { useLenis, useScreenMotion } from "./motion";
 import { useNativeToast } from "./Toast";
 import { useGroupRealtime } from "../lib/useGroupRealtime";
 
-type Screen = "home" | "group" | "friends" | "notifications" | "profile";
 const C = {
   bg: "#0B1020",
   panel: "#121A2C",
@@ -93,26 +101,31 @@ function Button({
   onPress,
   secondary = false,
   compact = false,
+  busy = false,
 }: {
   title: string;
   onPress: () => void;
   secondary?: boolean;
   compact?: boolean;
+  /** Chặn double-tap trên các hành động async (gửi lời mời, chấp nhận nhóm…). */
+  busy?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={busy}
       style={({ pressed }) => [
         styles.button,
         secondary && styles.buttonSecondary,
         compact && styles.buttonCompact,
         pressed && styles.pressed,
+        busy && { opacity: 0.55 },
       ]}
     >
       <Text
         style={[styles.buttonText, secondary && styles.buttonTextSecondary]}
       >
-        {title}
+        {busy ? "Đang…" : title}
       </Text>
     </Pressable>
   );
@@ -900,20 +913,29 @@ function SimpleScreen({
   subtitle,
   children,
   onBack,
+  onRefresh,
 }: {
   title: string;
   subtitle: string;
-  children?: React.ReactNode;
+  children?: ReactNode;
   onBack?: () => void;
+  onRefresh?: () => void | Promise<void>;
 }) {
   const { width } = useWindowDimensions();
   const wide = width >= 900;
+  const [refreshing, setRefreshing] = useState(false);
   return (
     <SafeAreaView style={styles.appScreen}>
       <View style={styles.innerHeader}>
-        <Pressable onPress={onBack}>
-          <Text style={styles.back}>‹</Text>
-        </Pressable>
+        {/* Nút back chỉ có nghĩa khi màn hình được push vào stack; màn tab thì
+            không có gì để quay lại. */}
+        {onBack ? (
+          <Pressable onPress={onBack}>
+            <Text style={styles.back}>‹</Text>
+          </Pressable>
+        ) : (
+          <View style={styles.backSlot} />
+        )}
         <View>
           <Text style={styles.mutedUpper}>STUDYSYNC</Text>
           <Text style={styles.headerTitle}>{title}</Text>
@@ -922,6 +944,19 @@ function SimpleScreen({
       <ScrollView
         style={styles.flex}
         contentContainerStyle={[styles.content, wide && styles.contentWide]}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                void Promise.resolve(onRefresh()).finally(() => setRefreshing(false));
+              }}
+              tintColor={C.blue}
+              colors={[C.blue]}
+            />
+          ) : undefined
+        }
       >
         <Text style={styles.pageSubtitle}>{subtitle}</Text>
         {children}
@@ -930,9 +965,330 @@ function SimpleScreen({
   );
 }
 
+type AppValue = {
+  token: string;
+  user: api.User;
+  groups: api.Group[];
+  refresh: () => void;
+  openCreate: () => void;
+  signOut: () => void;
+};
+const AppContext = createContext<AppValue | null>(null);
+function useApp(): AppValue {
+  const value = useContext(AppContext);
+  if (!value) throw new Error("AppContext chưa được cung cấp");
+  return value;
+}
+
+/**
+ * Các màn hình phải là component khai báo ở cấp module. Nếu định nghĩa chúng
+ * bên trong AppShell, mỗi lần AppShell render sẽ tạo ra một component type mới
+ * và React unmount/remount cả màn hình — mất focus ô nhập, mất vị trí cuộn.
+ */
+type RootStackParamList = { tabs: undefined; group: { groupId: number } };
+type TabParamList = {
+  home: undefined;
+  friends: undefined;
+  notifications: undefined;
+  profile: undefined;
+};
+
+function HomeTab() {
+  const app = useApp();
+  // Màn hình nằm trong tab lồng, còn "group" thuộc stack cha — phải xin
+  // navigation của stack cha thì push mới có type đúng.
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  return (
+    <HomeScreen
+      user={app.user}
+      groups={app.groups}
+      onRefresh={app.refresh}
+      onOpenGroup={(group) => navigation.push("group", { groupId: group.id })}
+      onCreate={app.openCreate}
+    />
+  );
+}
+
+function FriendsTab() {
+  const app = useApp();
+  const toast = useNativeToast();
+  const [data, setData] = useState<any>({ friends: [], incoming: [], outgoing: [] });
+  const [loaded, setLoaded] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<api.User[]>([]);
+  const [busy, setBusy] = useState<number | null>(null);
+  const load = useCallback(async () => {
+    try {
+      setData(await api.getFriends(app.token));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Không tải được bạn bè.", "error");
+    } finally {
+      setLoaded(true);
+    }
+  }, [app.token, toast]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const search = async () => {
+    if (query.trim().length < 2) {
+      toast("Nhập ít nhất 2 ký tự để tìm.", "error");
+      return;
+    }
+    try {
+      setResults(await api.searchUsers(query.trim(), app.token));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Không tìm được người dùng.", "error");
+    }
+  };
+  const request = async (userId: number) => {
+    setBusy(userId);
+    try {
+      await api.sendFriendRequest(userId, app.token);
+      toast("Đã gửi lời mời kết bạn.");
+      setResults((current) => current.filter((person) => person.id !== userId));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Không gửi được lời mời.", "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+  const answer = async (requestId: number, action: "accept" | "decline") => {
+    setBusy(requestId);
+    try {
+      await api.respondFriendRequest(requestId, action, app.token);
+      toast(action === "accept" ? "Đã kết bạn." : "Đã từ chối lời mời.");
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Không xử lý được lời mời.", "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <SimpleScreen
+      title="Bạn bè"
+      subtitle="Kết nối những người cùng mục tiêu học tập."
+      onRefresh={load}
+    >
+      <View style={styles.searchRow}>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Tên hoặc email"
+          placeholderTextColor={C.muted}
+          style={styles.input}
+          onSubmitEditing={() => void search()}
+        />
+        <Button title="Tìm" secondary onPress={() => void search()} />
+      </View>
+      {data.incoming?.length ? (
+        <>
+          <Text style={styles.sectionTitle}>Lời mời của bạn</Text>
+          {data.incoming.map((item: any) => (
+            <View key={item.request_id} style={styles.member}>
+              <Avatar name={item.name} url={item.avatar_url} />
+              <View style={styles.flex}>
+                <Text style={styles.taskTitle}>{item.name}</Text>
+                <Text style={styles.pageSubtitle}>{item.email}</Text>
+              </View>
+              <Button
+                title="Đồng ý"
+                compact
+                busy={busy === item.request_id}
+                onPress={() => void answer(item.request_id, "accept")}
+              />
+              <Button
+                title="Bỏ qua"
+                secondary
+                compact
+                onPress={() => void answer(item.request_id, "decline")}
+              />
+            </View>
+          ))}
+        </>
+      ) : null}
+      <Text style={styles.sectionTitle}>
+        {loaded && !data.friends?.length ? "Chưa có bạn bè nào" : `Bạn bè (${data.friends?.length || 0})`}
+      </Text>
+      {results.length ? (
+        <>
+          <Text style={styles.mutedUpper}>KẾT QUẢ TÌM KIẾM</Text>
+          {results.map((person) => (
+            <View key={person.id} style={styles.member}>
+              <Avatar name={person.name} url={person.avatar_url} />
+              <View style={styles.flex}>
+                <Text style={styles.taskTitle}>{person.name}</Text>
+                <Text style={styles.pageSubtitle}>{person.email}</Text>
+              </View>
+              <Button
+                title="Kết bạn"
+                compact
+                busy={busy === person.id}
+                onPress={() => void request(person.id)}
+              />
+            </View>
+          ))}
+        </>
+      ) : null}
+      {data.friends?.map((friend: any) => (
+        <View key={friend.id} style={styles.member}>
+          <Avatar name={friend.name} url={friend.avatar_url} />
+          <View style={styles.flex}>
+            <Text style={styles.taskTitle}>{friend.name}</Text>
+            <Text style={styles.pageSubtitle}>{friend.email}</Text>
+          </View>
+        </View>
+      ))}
+    </SimpleScreen>
+  );
+}
+
+function NotificationsTab() {
+  const app = useApp();
+  const toast = useNativeToast();
+  const [items, setItems] = useState<any[]>([]);
+  const [invites, setInvites] = useState<api.GroupInvitation[]>([]);
+  const [busy, setBusy] = useState<number | null>(null);
+  const load = useCallback(async () => {
+    try {
+      setItems(await api.getNotifications(app.token));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Không tải được thông báo.", "error");
+    }
+    try {
+      setInvites((await api.getGroupInvitations(app.token)).filter((i) => i.status === "pending"));
+    } catch {
+      /* endpoint lời mời có thể chưa tồn tại trên backend cũ */
+    }
+  }, [app.token, toast]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const markAll = async () => {
+    try {
+      await api.markAllNotificationsRead(app.token);
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Chưa đánh dấu được.", "error");
+    }
+  };
+  const answer = async (invitation: api.GroupInvitation, action: "accept" | "decline") => {
+    setBusy(invitation.id);
+    try {
+      await api.respondGroupInvitation(invitation.id, action, app.token);
+      toast(action === "accept" ? `Đã vào nhóm ${invitation.group_name}.` : "Đã từ chối lời mời.");
+      await Promise.all([load(), app.refresh()]);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Không xử lý được lời mời.", "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <SimpleScreen
+      title="Thông báo"
+      subtitle="Mọi cập nhật quan trọng của bạn và nhóm."
+      onRefresh={load}
+    >
+      {invites.length ? (
+        <>
+          <Text style={styles.sectionTitle}>Lời mời vào nhóm</Text>
+          {invites.map((invitation) => (
+            <View key={invitation.id} style={styles.member}>
+              <View style={styles.flex}>
+                <Text style={styles.taskTitle}>{invitation.group_name}</Text>
+                <Text style={styles.pageSubtitle}>{invitation.inviter_name} mời bạn</Text>
+              </View>
+              <Button
+                title="Tham gia"
+                compact
+                busy={busy === invitation.id}
+                onPress={() => void answer(invitation, "accept")}
+              />
+              <Button
+                title="Từ chối"
+                secondary
+                compact
+                onPress={() => void answer(invitation, "decline")}
+              />
+            </View>
+          ))}
+        </>
+      ) : null}
+      <View style={styles.sectionRow}>
+        <Text style={styles.sectionTitle}>
+          {items.length ? `${items.length} thông báo` : "Bạn đã cập nhật hết"}
+        </Text>
+        {items.some((item) => !item.read_at) ? (
+          <Button title="Đọc tất cả" secondary compact onPress={() => void markAll()} />
+        ) : null}
+      </View>
+      {items.map((item) => (
+        <View key={item.id} style={styles.notification}>
+          <Text style={styles.taskTitle}>{item.title}</Text>
+          <Text style={styles.pageSubtitle}>{item.body}</Text>
+          {item.read_at ? null : <Text style={styles.mutedUpper}>CHƯA ĐỌC</Text>}
+        </View>
+      ))}
+    </SimpleScreen>
+  );
+}
+
+function ProfileTab() {
+  const app = useApp();
+  return (
+    <SimpleScreen title="Hồ sơ" subtitle="Không gian cá nhân của bạn.">
+      <View style={styles.profileHero}>
+        <Avatar name={app.user.name} url={app.user.avatar_url} size={76} />
+        <Text style={styles.profileName}>{app.user.name}</Text>
+        <Text style={styles.pageSubtitle}>{app.user.email}</Text>
+      </View>
+      <Button title="Đăng xuất" secondary onPress={app.signOut} />
+    </SimpleScreen>
+  );
+}
+
+function GroupView({ route, navigation }: NativeStackScreenProps<RootStackParamList, "group">) {
+  const app = useApp();
+  const group = app.groups.find((item) => item.id === route.params.groupId);
+  if (!group) return null;
+  return (
+    <GroupScreen
+      group={group}
+      token={app.token}
+      user={app.user}
+      onBack={() => {
+        app.refresh();
+        navigation.goBack();
+      }}
+    />
+  );
+}
+
+const RootStack = createNativeStackNavigator<RootStackParamList>();
+const Tabs = createBottomTabNavigator<TabParamList>();
+
+function RootTabs() {
+  const insets = useSafeAreaInsets();
+  return (
+    <Tabs.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: C.blue,
+        tabBarInactiveTintColor: C.muted,
+        tabBarStyle: { backgroundColor: C.panel, borderTopColor: C.line, height: 58 + insets.bottom, paddingTop: 6 },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+      }}
+    >
+      <Tabs.Screen name="home" component={HomeTab} options={{ title: "Tổng quan" }} />
+      <Tabs.Screen name="friends" component={FriendsTab} options={{ title: "Bạn bè" }} />
+      <Tabs.Screen name="notifications" component={NotificationsTab} options={{ title: "Thông báo" }} />
+      <Tabs.Screen name="profile" component={ProfileTab} options={{ title: "Hồ sơ" }} />
+    </Tabs.Navigator>
+  );
+}
+
 export function AppShell() {
-  const { width } = useWindowDimensions();
-  const wide = width >= 900;
   useLenis();
   useScreenMotion("app");
   const toast = useNativeToast();
@@ -941,15 +1297,7 @@ export function AppShell() {
     user: api.User;
   } | null>(null);
   const [hydrated, setHydrated] = useState(false);
-  const [screen, setScreen] = useState<Screen>("home");
-  const [activeGroup, setActiveGroup] = useState<api.Group | null>(null);
   const [groups, setGroups] = useState<api.Group[]>([]);
-  const [notifications, setNotifications] = useState<any[]>([]);
-  const [friends, setFriends] = useState<any>({
-    friends: [],
-    incoming: [],
-    outgoing: [],
-  });
   const [showCreate, setShowCreate] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
@@ -996,129 +1344,12 @@ export function AppShell() {
     await clearSession();
     setSession(null);
     setGroups([]);
-    setActiveGroup(null);
-    setScreen("home");
   };
   useEffect(() => {
     void refresh();
   }, [refresh]);
-  const openFriends = async () => {
-    if (!session) return;
-    try {
-      setFriends(await api.getFriends(session.token));
-      setScreen("friends");
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "Không tải được bạn bè.", "error");
-    }
-  };
-  const openNotifications = async () => {
-    if (!session) return;
-    try {
-      setNotifications(await api.getNotifications(session.token));
-      setScreen("notifications");
-    } catch (e) {
-      toast(
-        e instanceof Error ? e.message : "Không tải được thông báo.",
-        "error",
-      );
-    }
-  };
   if (!hydrated) return <LoadingScreen />;
   if (!session) return <AuthScreen onAuth={(next) => void signIn(next)} />;
-  if (activeGroup && screen === "group")
-    return (
-      <GroupScreen
-        group={activeGroup}
-        token={session.token}
-        user={session.user}
-        onBack={() => {
-          setActiveGroup(null);
-          setScreen("home");
-          void refresh();
-        }}
-      />
-    );
-  let content: React.ReactNode = (
-    <HomeScreen
-      user={session.user}
-      groups={groups}
-      onRefresh={() => void refresh()}
-      onOpenGroup={(group) => {
-        setActiveGroup(group);
-        setScreen("group");
-      }}
-      onCreate={() => setShowCreate(true)}
-    />
-  );
-  if (screen === "friends")
-    content = (
-      <SimpleScreen
-        title="Bạn bè"
-        subtitle="Kết nối những người cùng mục tiêu học tập."
-        onBack={() => setScreen("home")}
-      >
-        <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>◎</Text>
-          <Text style={styles.emptyTitle}>
-            {friends.friends?.length || 0} người bạn
-          </Text>
-          <Text style={styles.pageSubtitle}>
-            Tìm kiếm và gửi lời mời kết bạn sẽ được hiển thị tại đây.
-          </Text>
-        </View>
-        {friends.friends?.map((friend: any) => (
-          <View key={friend.id} style={styles.member}>
-            <Avatar name={friend.name} url={friend.avatar_url} />
-            <View style={styles.flex}>
-              <Text style={styles.taskTitle}>{friend.name}</Text>
-              <Text style={styles.pageSubtitle}>{friend.email}</Text>
-            </View>
-          </View>
-        ))}
-      </SimpleScreen>
-    );
-  if (screen === "notifications")
-    content = (
-      <SimpleScreen
-        title="Thông báo"
-        subtitle="Mọi cập nhật quan trọng của bạn và nhóm."
-      >
-        <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>✦</Text>
-          <Text style={styles.emptyTitle}>
-            {notifications.length
-              ? `${notifications.length} thông báo`
-              : "Bạn đã cập nhật hết"}
-          </Text>
-          <Text style={styles.pageSubtitle}>
-            {notifications.length
-              ? "Các lời mời và hoạt động mới nhất."
-              : "Không có thông báo mới."}
-          </Text>
-        </View>
-        {notifications.map((item) => (
-          <View key={item.id} style={styles.notification}>
-            <Text style={styles.taskTitle}>{item.title}</Text>
-            <Text style={styles.pageSubtitle}>{item.body}</Text>
-          </View>
-        ))}
-      </SimpleScreen>
-    );
-  if (screen === "profile")
-    content = (
-      <SimpleScreen title="Hồ sơ" subtitle="Không gian cá nhân của bạn.">
-        <View style={styles.profileHero}>
-          <Avatar name={session.user.name} url={session.user.avatar_url} size={76} />
-          <Text style={styles.profileName}>{session.user.name}</Text>
-          <Text style={styles.pageSubtitle}>{session.user.email}</Text>
-        </View>
-        <Button
-          title="Đăng xuất"
-          secondary
-          onPress={() => void signOut()}
-        />
-      </SimpleScreen>
-    );
   const create = async () => {
     if (!groupName.trim()) {
       toast("Nhập tên nhóm trước khi tạo.", "error");
@@ -1139,155 +1370,56 @@ export function AppShell() {
       toast(e instanceof Error ? e.message : "Không thể tạo nhóm.", "error");
     }
   };
+  const appValue: AppValue = {
+    token: session.token,
+    user: session.user,
+    groups,
+    refresh: () => void refresh(),
+    openCreate: () => setShowCreate(true),
+    signOut: () => void signOut(),
+  };
   return (
-    <SafeAreaView style={styles.root}>
-      <View style={styles.shellRow}>
-        {wide && (
-          <View style={styles.sidebar}>
-            <View style={styles.sideBrand}>
-              <View style={styles.logo}>
-                <Text style={styles.logoText}>S</Text>
-              </View>
-              <Text style={styles.sideBrandText}>StudySync</Text>
-            </View>
-            <Pressable
-              onPress={() => setScreen("home")}
-              style={styles.sideItem}
-            >
-              <Text style={styles.sideItemText}>⌂ Tổng quan</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => void openFriends()}
-              style={styles.sideItem}
-            >
-              <Text style={styles.sideItemText}>◌ Bạn bè</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => void openNotifications()}
-              style={styles.sideItem}
-            >
-              <Text style={styles.sideItemText}>♢ Thông báo</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setScreen("profile")}
-              style={styles.sideItem}
-            >
-              <Text style={styles.sideItemText}>◉ Hồ sơ</Text>
-            </Pressable>
-          </View>
-        )}
-        <View style={styles.flex}>
-          {content}
-          {!wide && (
-            <View style={styles.bottomNav}>
-              <Pressable onPress={() => setScreen("home")}>
-                <Text
-                  style={[
-                    styles.navIcon,
-                    screen === "home" && styles.navActive,
-                  ]}
-                >
-                  ⌂
-                </Text>
-                <Text
-                  style={[
-                    styles.navLabel,
-                    screen === "home" && styles.navActive,
-                  ]}
-                >
-                  Tổng quan
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => void openFriends()}>
-                <Text
-                  style={[
-                    styles.navIcon,
-                    screen === "friends" && styles.navActive,
-                  ]}
-                >
-                  ◌
-                </Text>
-                <Text
-                  style={[
-                    styles.navLabel,
-                    screen === "friends" && styles.navActive,
-                  ]}
-                >
-                  Bạn bè
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => void openNotifications()}>
-                <Text
-                  style={[
-                    styles.navIcon,
-                    screen === "notifications" && styles.navActive,
-                  ]}
-                >
-                  ♢
-                </Text>
-                <Text
-                  style={[
-                    styles.navLabel,
-                    screen === "notifications" && styles.navActive,
-                  ]}
-                >
-                  Thông báo
-                </Text>
-              </Pressable>
-              <Pressable onPress={() => setScreen("profile")}>
-                <Text
-                  style={[
-                    styles.navIcon,
-                    screen === "profile" && styles.navActive,
-                  ]}
-                >
-                  ◉
-                </Text>
-                <Text
-                  style={[
-                    styles.navLabel,
-                    screen === "profile" && styles.navActive,
-                  ]}
-                >
-                  Tôi
-                </Text>
-              </Pressable>
-            </View>
-          )}
-        </View>
-      </View>
-      <Modal visible={showCreate} transparent animationType="fade">
-        <View style={styles.modalBack}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Tạo không gian học tập</Text>
-            <TextInput
-              value={groupName}
-              onChangeText={setGroupName}
-              placeholder="Tên nhóm"
-              placeholderTextColor={C.muted}
-              style={styles.input}
-              autoFocus
-            />
-            <TextInput
-              value={groupDescription}
-              onChangeText={setGroupDescription}
-              placeholder="Mục tiêu của nhóm (tuỳ chọn)"
-              placeholderTextColor={C.muted}
-              style={styles.input}
-            />
-            <View style={styles.modalRow}>
-              <Button
-                title="Huỷ"
-                secondary
-                compact
-                onPress={() => setShowCreate(false)}
+    <AppContext.Provider value={appValue}>
+      <SafeAreaView style={styles.root}>
+          <NavigationContainer>
+            <RootStack.Navigator screenOptions={{ headerShown: false }}>
+              <RootStack.Screen name="tabs">{() => <RootTabs />}</RootStack.Screen>
+              <RootStack.Screen name="group" component={GroupView} />
+            </RootStack.Navigator>
+          </NavigationContainer>
+        <Modal visible={showCreate} transparent animationType="fade">
+          <View style={styles.modalBack}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Tạo không gian học tập</Text>
+              <TextInput
+                value={groupName}
+                onChangeText={setGroupName}
+                placeholder="Tên nhóm"
+                placeholderTextColor={C.muted}
+                style={styles.input}
+                autoFocus
               />
-              <Button title="Tạo nhóm" compact onPress={() => void create()} />
+              <TextInput
+                value={groupDescription}
+                onChangeText={setGroupDescription}
+                placeholder="Mục tiêu của nhóm (tuỳ chọn)"
+                placeholderTextColor={C.muted}
+                style={styles.input}
+              />
+              <View style={styles.modalRow}>
+                <Button
+                  title="Huỷ"
+                  secondary
+                  compact
+                  onPress={() => setShowCreate(false)}
+                />
+                <Button title="Tạo nhóm" compact onPress={() => void create()} />
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+        </Modal>
+      </SafeAreaView>
+    </AppContext.Provider>
   );
 }
 
@@ -1500,6 +1632,15 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   sectionTitle: { color: C.ink, fontSize: 18, fontWeight: "800" },
+  sectionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: 8,
+  },
+  searchRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8 },
+  backSlot: { width: 24 },
   link: { color: C.cyan, fontSize: 13, fontWeight: "800" },
   groupCard: {
     flexDirection: "row",
