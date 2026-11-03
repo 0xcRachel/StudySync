@@ -12,6 +12,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   return body as T;
 }
 const post = (path: string, body: unknown, token?: string) => request<any>(path, { method: 'POST', body: JSON.stringify(body) }, token);
+const patch = <T>(path: string, body: unknown, token?: string) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }, token);
 
 export async function login(email: string, password: string) { return (await post('/login.php', { email, password })).data as { token: string; user: User }; }
 export async function register(name: string, email: string, password: string) { return (await post('/register.php', { name, email, password })).data as { token: string; user: User }; }
@@ -48,10 +49,10 @@ export async function respondFriendRequest(requestId: number, action: 'accept' |
   return post('/respond_friend_request.php', { request_id: requestId, action }, token);
 }
 export async function markNotificationRead(id: number, token: string) {
-  return request<unknown>('/notifications.php', { method: 'PATCH', body: { id } }, token);
+  return patch<unknown>('/notifications.php', { id }, token);
 }
 export async function markAllNotificationsRead(token: string) {
-  return request<{ updated: number }>('/notifications.php', { method: 'PATCH', body: { action: 'mark_all' } }, token);
+  return (await patch<any>('/notifications.php', { action: 'mark_all' }, token)).data as { updated: number };
 }
 export async function getGroupInvitations(token: string) {
   return (await request<any>('/group_invitations.php', {}, token)).data as GroupInvitation[];
@@ -60,7 +61,7 @@ export async function respondGroupInvitation(invitationId: number, action: 'acce
   return post('/respond_group_invitation.php', { invitation_id: invitationId, action }, token);
 }
 export async function updateProfile(payload: { name: string; username: string; avatar_url: string; bio: string }, token: string) {
-  return (await request<any>('/profile.php', { method: 'PATCH', body: payload }, token)).data as { user: User };
+  return (await patch<any>('/profile.php', payload, token)).data as { user: User };
 }
 export async function changePassword(currentPassword: string, newPassword: string, token: string) {
   return post('/change_password.php', { current_password: currentPassword, new_password: newPassword }, token);
