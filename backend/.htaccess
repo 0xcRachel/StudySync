@@ -1,0 +1,34 @@
+# Flat public API URLs are routed to the organized implementation files.
+Options -Indexes
+RewriteEngine On
+RewriteRule ^(register|login|me|logout|change_password|create_group|create_group_auth|list_groups|delete_group|group_members|group_invitations|invite_group_member|respond_group_invitation|assign_task|create_task|delete_task|get_tasks|update_task_status|update_task|task_comments|messages|message_image|message_reactions|friends|users|send_friend_request|respond_friend_request|notifications|profile|oauth_callback|oauth_config|oauth_start|health)\.php$ router.php [QSA,L]
+
+<IfModule mod_authz_core.c>
+    <FilesMatch "^(bootstrap|config|database|helpers|oauth|oauth_helpers)\.php$">
+        Require all denied
+    </FilesMatch>
+
+    <FilesMatch "^\.env">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+
+<IfModule mod_access_compat.c>
+    <FilesMatch "^(bootstrap|config|database|helpers|oauth|oauth_helpers)\.php$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+    <FilesMatch "^\.env">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+</IfModule>
+
+<IfModule mod_php.c>
+    php_value upload_max_filesize 6M
+    php_value post_max_size 8M
+</IfModule>
