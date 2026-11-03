@@ -756,7 +756,7 @@ textarea.field {
 .chat-live-dot.reconnecting { background: #d4a044; }
 .chat-live-count { margin-left: auto; padding: 5px 9px; border-radius: 999px; background: var(--wash); color: var(--pine); font-size: 10px; font-weight: 550; }
 .chat-typing { min-height: 18px; margin: 0 0 3px; color: var(--ink-3); font-size: 11.5px; font-style: italic; }
-.chat:has(.msg) { min-height: 260px; padding: 10px 2px 22px; }
+.chat:has(.msg) { min-height: 260px; padding: 10px 2px 22px; overflow-anchor: none; }
 .chat-unit { display: grid; }
 .chat-day { display: flex; align-items: center; gap: 12px; margin: 22px 0 12px; color: var(--ink-3); font-size: 10.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; }
 .chat-day::before, .chat-day::after { content: ''; flex: 1; height: 1px; background: var(--line); }

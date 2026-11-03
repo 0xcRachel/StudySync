@@ -214,20 +214,53 @@ export function GroupScreen({
     };
   }, [groupId, token, tab, reloadKey]);
 
-  // A chat opens on its newest message. This has to run after React commits
-  // the rows, so a requestAnimationFrame scheduled from the fetch lands too
-  // early and measures the old document height.
+  const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : 0;
+
+  // Reader có đang ở đáy không? Cập nhật khi người dùng tự cuộn, và đặt lại
+  // thành true khi vừa vào tab chat (mở chat là phải thấy tin mới nhất).
+  const stickToBottom = useRef(true);
+  useEffect(() => {
+    const onScroll = () => { stickToBottom.current = isNearChatBottom(); };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const scrolledToMessageId = useRef(-1);
+
+  /**
+   * Nơi DUY NHẤT quyết định vị trí cuộn của khung chat. Chạy sau khi React đã
+   * commit các dòng tin mới, nên đo được chiều cao thật thay vì cuộn theo lịch
+   * rAF và bị nội dung lớn dần làm lệch. Cuộn tức thì: animate trên tài liệu
+   * đang thay đổi chiều cao chính là thứ tạo ra cảm giác "bị đẩy scroll".
+   */
   useLayoutEffect(() => {
-    if (!pendingScrollToBottom.current || messages.length === 0) return;
-    pendingScrollToBottom.current = false;
+    if (lastMessageId === 0) return;
+    if (pendingScrollToBottom.current) {
+      pendingScrollToBottom.current = false;
+      stickToBottom.current = true;
+    } else if (scrolledToMessageId.current === -1) {
+      scrolledToMessageId.current = lastMessageId;
+      return;
+    } else if (scrolledToMessageId.current === lastMessageId) {
+      return;
+    } else if (!stickToBottom.current) {
+      scrolledToMessageId.current = lastMessageId;
+      return;
+    }
+    scrolledToMessageId.current = lastMessageId;
     scrollToBottom(true);
-  }, [messages]);
+  }, [lastMessageId]);
+
+  // Đổi tab rồi quay lại: panel chat unmount, nên phải reset con trỏ cuộn.
+  useEffect(() => {
+    if (tab !== 'chat') scrolledToMessageId.current = -1;
+  }, [tab]);
 
   const handleRealtimeMessage = useCallback((message: Message) => {
     setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message].slice(-300));
-    // Only follow the thread when the reader is already at the bottom; the
-    // page scrolls with the document, so measure the viewport, not the panel.
-    if (isNearChatBottom()) window.requestAnimationFrame(() => scrollToBottom(false));
+    // Không cuộn ở đây: useLayoutEffect dưới đây là nơi duy nhất quyết định vị
+    // trí cuộn. Server cũng echo lại tin vừa gửi, nên cuộn ở cả hai chỗ là bị
+    // giật (nhảy xuống đáy rồi kẹt lại giữa chừng).
   }, []);
   const handleRealtimeTasks = useCallback((next: Task[]) => setTasks(next), []);
   const handleRealtimeMembers = useCallback((next: Member[]) => setMembers(next), []);
@@ -447,7 +480,6 @@ export function GroupScreen({
       if (imageInputRef.current) imageInputRef.current.value = '';
       window.requestAnimationFrame(() => {
         chatInputRef.current?.focus();
-        scrollToBottom(false);
       });
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : 'Không gửi được tin nhắn.', 'bad');
