@@ -17,6 +17,7 @@ const patch = <T>(path: string, body: unknown, token?: string) => request<T>(pat
 export async function login(email: string, password: string) { return (await post('/login.php', { email, password })).data as { token: string; user: User }; }
 export async function register(name: string, email: string, password: string) { return (await post('/register.php', { name, email, password })).data as { token: string; user: User }; }
 export async function logout(token: string) { return post('/logout.php', {}, token); }
+export async function me(token: string) { return (await request<any>('/me.php', {}, token)).data as { user: User }; }
 export async function getGroups(token: string) { return (await request<any>('/list_groups.php', {}, token)).data as Group[]; }
 export async function createGroup(name: string, description: string, token: string) { return (await post('/create_group_auth.php', { name, description }, token)).data as Group; }
 export async function getTasks(groupId: number, token: string) { return (await request<any>(`/get_tasks.php?group_id=${groupId}`, {}, token)).data as Task[]; }

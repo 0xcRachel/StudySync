@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as api from "./api";
+import { clearSession, readSession, writeSession } from "./session";
 import { useLenis, useScreenMotion } from "./motion";
 import { useNativeToast } from "./Toast";
 import { useGroupRealtime } from "../lib/useGroupRealtime";
@@ -114,6 +115,17 @@ function Button({
         {title}
       </Text>
     </Pressable>
+  );
+}
+
+function LoadingScreen() {
+  return (
+    <SafeAreaView style={styles.loadingScreen}>
+      <View style={styles.logo}>
+        <Text style={styles.logoText}>S</Text>
+      </View>
+      <Text style={styles.mutedUpper}>ĐANG MỞ KHÔNG GIAN HỌC TẬP…</Text>
+    </SafeAreaView>
   );
 }
 
@@ -928,6 +940,7 @@ export function AppShell() {
     token: string;
     user: api.User;
   } | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const [screen, setScreen] = useState<Screen>("home");
   const [activeGroup, setActiveGroup] = useState<api.Group | null>(null);
   const [groups, setGroups] = useState<api.Group[]>([]);
@@ -948,6 +961,44 @@ export function AppShell() {
       toast(e instanceof Error ? e.message : "Không tải được nhóm.", "error");
     }
   }, [session, toast]);
+  // Khôi phục phiên từ thiết bị. Token cũ có thể đã hết hạn, nên phải kiểm
+  // với /me.php trước khi coi như đang đăng nhập — nếu không người dùng bị
+  // nhốt ở màn hình mà mọi request đều báo lỗi.
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const stored = await readSession();
+      if (!stored) {
+        if (active) setHydrated(true);
+        return;
+      }
+      try {
+        const { user } = await api.me(stored.token);
+        if (!active) return;
+        setSession({ token: stored.token, user });
+      } catch {
+        if (!active) return;
+        await clearSession();
+      } finally {
+        if (active) setHydrated(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+  const signIn = async (next: { token: string; user: api.User }) => {
+    setSession(next);
+    await writeSession(next);
+  };
+  const signOut = async () => {
+    if (session) void api.logout(session.token).catch(() => undefined);
+    await clearSession();
+    setSession(null);
+    setGroups([]);
+    setActiveGroup(null);
+    setScreen("home");
+  };
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -972,7 +1023,8 @@ export function AppShell() {
       );
     }
   };
-  if (!session) return <AuthScreen onAuth={setSession} />;
+  if (!hydrated) return <LoadingScreen />;
+  if (!session) return <AuthScreen onAuth={(next) => void signIn(next)} />;
   if (activeGroup && screen === "group")
     return (
       <GroupScreen
@@ -1063,13 +1115,7 @@ export function AppShell() {
         <Button
           title="Đăng xuất"
           secondary
-          onPress={() => {
-            // Xóa phiên cục bộ mà không gọi /logout.php thì token vẫn còn sống
-            // trên server — rủi ro thật nếu dùng chung thiết bị.
-            void api.logout(session.token).catch(() => undefined);
-            setSession(null);
-            setScreen("home");
-          }}
+          onPress={() => void signOut()}
         />
       </SimpleScreen>
     );
@@ -1512,6 +1558,13 @@ const styles = StyleSheet.create({
   emptyIcon: { color: C.blue, fontSize: 40 },
   emptyTitle: { color: C.ink, fontSize: 17, fontWeight: "800" },
   appScreen: { flex: 1, backgroundColor: C.bg },
+  loadingScreen: {
+    flex: 1,
+    backgroundColor: C.bg,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+  },
   innerHeader: {
     flexDirection: "row",
     alignItems: "center",
