@@ -9,7 +9,12 @@
     "scheme": "studysync",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.studysync.app"
+      "bundleIdentifier": "com.studysync.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "StudySync cần mở thư viện ảnh để bạn gửi ảnh trong cuộc trò chuyện nhóm.",
+        "NSCameraUsageDescription": "StudySync cần máy ảnh để bạn chụp và gửi ảnh vào cuộc trò chuyện nhóm.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.studysync.app",
