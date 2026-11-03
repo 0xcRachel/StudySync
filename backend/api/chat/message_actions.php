@@ -21,7 +21,7 @@ run_api(static function (): void {
         $body = trim((string) ($data['body'] ?? ''));
         if ($body === '' && $message['image_name'] === null) throw new ApiException(422, 'Tin nhắn không được để trống.');
         if (mb_strlen($body, 'UTF-8') > 4000) throw new ApiException(422, 'Tin nhắn tối đa 4000 ký tự.');
-        $storedBody = $body !== '' ? $body : 'Ảnh đính kèm';
+        $storedBody = $body;
         $pdo->prepare('UPDATE messages SET body = ?, edited_at = CURRENT_TIMESTAMP WHERE id = ?')->execute([$storedBody, $messageId]);
         send_json(['success' => true, 'message' => 'Đã sửa tin nhắn.', 'data' => ['message_id' => $messageId, 'body' => $storedBody]]);
     }

@@ -558,10 +558,14 @@ textarea.field {
 .rail-signout { margin-top: 10px; padding-left: 10px; font-size: 12px; color: var(--ink-3); }
 .rail-signout:hover { color: var(--ink); }
 
-.main { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+.main { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
 .page {
   max-width: 1080px;
   padding: clamp(34px, 4.4vw, 68px) var(--pad) 140px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .mhead { display: none; }
@@ -753,14 +757,30 @@ textarea.field {
 .task-assign-menu .btn { margin-top: 4px; }
 
 /* ---------- Chat ---------- */
-#panel-chat { position: relative; isolation: isolate; }
-.chat-livebar { position: sticky; top: 0; z-index: 12; display: flex; align-items: center; gap: 9px; min-height: 46px; margin: 0 0 8px; padding: 0 14px; color: var(--ink-2); font-size: 11px; background: rgba(247,248,243,.94); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 5px 18px rgba(21,23,26,.035); backdrop-filter: blur(12px); }
+/* Khung chat chiếm hết chiều cao còn lại: danh sách tin là vùng cuộn riêng,
+   ô soạn thảo nằm chết ở đáy thay vì trôi theo trang. */
+/* Khi tab chat đang mở, .main KHÔNG được cuộn nữa — nếu nó cuộn thì mọi flex:1
+   bên trong nhận chiều cao theo nội dung thay vì theo viewport, và ô soạn thảo
+   tràn ra ngoài màn hình. .chat trở thành vùng cuộn duy nhất.
+   Chrome của trang chat cũng phải thắt lại: padding + header + tab + livebar +
+   composer từng ngốn 429/459px, khiến danh sách tin chỉ còn 30px. */
+.main:has(#panel-chat) { overflow: hidden; }
+.page:has(#panel-chat) { padding-top: 10px; padding-bottom: 0; overflow: hidden; }
+.page:has(#panel-chat) .back { margin-bottom: 10px; }
+.page:has(#panel-chat) .phead { margin-bottom: 14px; }
+.page:has(#panel-chat) .tabs { margin-bottom: 10px; }
+#panel-chat { position: relative; isolation: isolate; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.chat-livebar { flex: none; position: relative; z-index: 12; display: flex; align-items: center; gap: 9px; min-height: 46px; margin: 0 0 8px; padding: 0 14px; color: var(--ink-2); font-size: 11px; background: rgba(247,248,243,.94); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 5px 18px rgba(21,23,26,.035); backdrop-filter: blur(12px); }
 .chat-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #d4a044; box-shadow: 0 0 0 3px rgba(212,160,68,.12); }
 .chat-live-dot.connected { background: #3b9b73; box-shadow: 0 0 0 3px rgba(59,155,115,.12); }
 .chat-live-dot.reconnecting { background: #d4a044; }
 .chat-live-count { margin-left: auto; padding: 5px 9px; border-radius: 999px; background: var(--wash); color: var(--pine); font-size: 10px; font-weight: 550; }
 .chat-typing { min-height: 18px; margin: 0 0 3px; color: var(--ink-3); font-size: 11.5px; font-style: italic; }
-.chat:has(.msg) { min-height: 260px; padding: 10px 2px 22px; overflow-anchor: none; }
+.chat:has(.msg) { padding: 10px 2px 22px; overflow-anchor: none; }
+/* Không đặt min-height ở đây: .chat là flex con phải co đúng phần còn lại của
+   panel, min-height sẽ cưỡng nó cao hơn chỗ được chia và đẩy composer ra ngoài
+   màn hình. */
+.chat { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .chat-unit { display: grid; }
 .chat-day { display: flex; align-items: center; gap: 12px; margin: 22px 0 12px; color: var(--ink-3); font-size: 10.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; }
 .chat-day::before, .chat-day::after { content: ''; flex: 1; height: 1px; background: var(--line); }
@@ -858,8 +878,8 @@ textarea.field {
 .message-read { margin: 5px 4px 0; color: var(--ink-3); font-size: 10px; }
 
 .chat-form {
-  position: sticky;
-  bottom: 0;
+  flex: none;
+  position: relative;
   z-index: 15;
   display: block;
   padding: 10px;
@@ -867,12 +887,15 @@ textarea.field {
   border: 1px solid var(--line-2);
   border-radius: 17px;
   box-shadow: 0 14px 38px rgba(21,23,26,.09), 0 2px 6px rgba(21,23,26,.035);
-  margin: 16px 0 8px;
+  margin: 6px 0 6px;
   backdrop-filter: blur(14px);
 }
 .chat-compose-row { display: flex; align-items: flex-end; gap: 8px; }
 .chat-text-wrap { position: relative; min-width: 0; flex: 1; }
-.chat-textarea { display: block; width: 100%; min-height: 44px; max-height: 180px; overflow-y: auto; resize: none; border: 0; outline: 0; padding: 10px 12px 5px; background: transparent; color: var(--ink); font: inherit; line-height: 1.5; }
+/* Chiều cao ô nhập là CỐ ĐỊNH, text dài thì cuộn bên trong. Nếu cho nó tự giãn
+   thì nó là flex sibling nên sẽ hút chiều cao của .chat: gõ 4 dòng từng làm danh
+   sách tin co từ 90px xuống 43px và cả khung chat bị đẩy lên 47px. */
+.chat-textarea { display: block; width: 100%; height: 54px; min-height: 54px; max-height: 54px; overflow-y: auto; resize: none; border: 0; outline: 0; padding: 8px 12px 4px; background: transparent; color: var(--ink); font: inherit; line-height: 1.5; }
 .chat-textarea::placeholder { color: var(--ink-3); }
 .chat-tool, .chat-send { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 11px; color: var(--ink-2); transition: background .15s ease, color .15s ease, transform .15s ease; }
 .chat-tool:hover { background: var(--sunk); color: var(--ink); }
@@ -1155,10 +1178,6 @@ textarea.field {
   .tabbar button[aria-current='true'] { color: var(--ink); }
   .tabbar .tcount { font-variant-numeric: tabular-nums; }
 
-  /* Tabbar cố định cao 60px tới tận 980px, nên ô soạn thảo phải né nó ở
-     mọi khổ nằm trong khoảng 641–980px, không chỉ dưới 640px. */
-  .chat-form { bottom: 0; }
-
   .hero { grid-template-columns: minmax(0, 1fr); gap: 46px; padding-top: 40px; padding-bottom: 64px; }
   .hero-art { max-width: 480px; }
   .facts { grid-template-columns: minmax(0, 1fr); }
@@ -1188,9 +1207,9 @@ textarea.field {
   .shead { margin-top: 40px; }
   .phead { margin-bottom: 26px; }
   .psub { font-size: 13.5px; }
-  .chat-livebar { top: 4px; min-height: 42px; padding-inline: 11px; }
+  .chat-livebar { min-height: 42px; padding-inline: 11px; }
   .chat-live-count { max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chat:has(.msg) { min-height: 200px; padding: 4px 0 14px; }
+  .chat:has(.msg) { padding: 4px 0 14px; }
   .msg { gap: 7px; margin-bottom: 10px; }
   .msg .avatar { width: 28px; height: 28px; }
   .msg-gutter { width: 28px; }
@@ -1200,7 +1219,7 @@ textarea.field {
   .msg-head { gap: 6px; margin: 0 3px 3px; }
   .msg-actions { gap: 2px; }
   .msg-action { width: 26px; height: 24px; }
-  .chat-form { position: sticky; bottom: 0; padding: 7px; border-radius: 15px; }
+  .chat-form { padding: 7px; border-radius: 15px; }
   .chat-toolbar > span { max-width: 57%; line-height: 1.25; }
   .chat-tool { width: 34px; height: 34px; }
   .chat-send { width: 36px; height: 36px; }

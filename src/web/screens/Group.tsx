@@ -11,7 +11,7 @@ import {
   percent,
   plural,
 } from '../lib/format';
-import { appScroller, isNearBottom, refreshScrollTriggers, scrollToBottom, scrollToOffset, useTabsInk } from '../lib/motion';
+import { refreshScrollTriggers, useTabsInk } from '../lib/motion';
 import { useToast } from '../components/Toast';
 import { TaskRow } from '../components/TaskRow';
 import { Avatar, EmptyState, ErrorBar, Icon, SkeletonRows } from '../components/ui';
@@ -35,13 +35,6 @@ const CHAT_GIFTS = [
   { icon: '🌟', label: 'Ngôi sao chăm chỉ' },
   { icon: '📚', label: 'Chồng sách tiếp sức' },
 ];
-
-/**
- * Vùng cuộn thật là .main (app là khung 100dvh), không phải tài liệu.
- */
-function isNearChatBottom(): boolean {
-  return isNearBottom(160);
-}
 
 /** Escape hoặc bấm ra ngoài đóng popover; nếu không, chọn mục là đường thoát duy nhất. */
 function useDismissPopovers(isOpen: boolean, close: () => void) {
@@ -159,6 +152,7 @@ export function GroupScreen({
   const taskInputRef = useRef<HTMLInputElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const lastMessageIdRef = useRef(0);
   const pendingScrollToBottom = useRef(false);
 
@@ -214,28 +208,38 @@ export function GroupScreen({
 
   const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : 0;
 
-  // Reader có đang ở đáy không? Cập nhật khi người dùng tự cuộn, và đặt lại
-  // thành true khi vừa vào tab chat (mở chat là phải thấy tin mới nhất).
-  // Sự kiện scroll của phần tử KHÔNG nổi lên window, nên phải gắn trực tiếp.
-  const stickToBottom = useRef(true);
-  useEffect(() => {
-    const onScroll = () => { stickToBottom.current = isNearChatBottom(); };
-    const el = appScroller();
-    const target: Window | HTMLElement = el ?? window;
-    target.addEventListener('scroll', onScroll, { passive: true } as AddEventListenerOptions);
-    return () => target.removeEventListener('scroll', onScroll);
-  }, [tab]);
+  /**
+   * Từ khi khung chat là flex column chiếm hết chiều cao còn lại, danh sách tin
+   * (.chat) là vùng cuộn riêng — không phải tài liệu, không phải .main. Mọi tính
+   * toán vị trí cuộn phải đo trên đúng phần tử này.
+   */
+  const chatNearBottom = useCallback((offset = 140) => {
+    const el = chatScrollRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < offset;
+  }, []);
 
+  const stickToBottom = useRef(true);
   const scrolledToMessageId = useRef(-1);
+
+  // Sự kiện scroll của phần tử không nổi lên window nên phải gắn trực tiếp.
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (!el) return undefined;
+    const onScroll = () => { stickToBottom.current = chatNearBottom(); };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [tab, chatNearBottom, lastMessageId]);
 
   /**
    * Nơi DUY NHẤT quyết định vị trí cuộn của khung chat. Chạy sau khi React đã
-   * commit các dòng tin mới, nên đo được chiều cao thật thay vì cuộn theo lịch
-   * rAF và bị nội dung lớn dần làm lệch. Cuộn tức thì: animate trên tài liệu
-   * đang thay đổi chiều cao chính là thứ tạo ra cảm giác "bị đẩy scroll".
+   * commit các dòng tin mới nên đo được chiều cao thật, và nhảy tức thay vì
+   * animate — animate trên nội dung đang đổi chiều cao chính là thứ tạo cảm giác
+   * "bị đẩy scroll".
    */
   useLayoutEffect(() => {
-    if (lastMessageId === 0) return;
+    const el = chatScrollRef.current;
+    if (lastMessageId === 0 || !el) return;
     if (pendingScrollToBottom.current) {
       pendingScrollToBottom.current = false;
       stickToBottom.current = true;
@@ -249,10 +253,10 @@ export function GroupScreen({
       return;
     }
     scrolledToMessageId.current = lastMessageId;
-    scrollToBottom(true);
+    el.scrollTop = el.scrollHeight;
   }, [lastMessageId]);
 
-  // Đổi tab rồi quay lại: panel chat unmount, nên phải reset con trỏ cuộn.
+  // Đổi tab rồi quay lại: panel chat unmount nên phải reset con trỏ cuộn.
   useEffect(() => {
     if (tab !== 'chat') scrolledToMessageId.current = -1;
   }, [tab]);
@@ -318,13 +322,6 @@ export function GroupScreen({
   }, [tab, groupId, token, realtimeStatus]);
 
   useEffect(() => {
-    const el = chatInputRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
-  }, [chatDraft]);
-
-  useEffect(() => {
     if (tab !== 'chat' || !chatDraft.trim()) return undefined;
     sendTyping(true);
     const timer = window.setTimeout(() => sendTyping(false), 1200);
@@ -373,9 +370,9 @@ export function GroupScreen({
   const loadOlder = useCallback(async () => {
     if (olderLoading || messages.length === 0) return;
     const oldest = messages.reduce((lowest, message) => Math.min(lowest, message.id), Number.POSITIVE_INFINITY);
-    const scroller = appScroller();
-    const previousHeight = scroller ? scroller.scrollHeight : document.documentElement.scrollHeight;
-    const previousTop = scroller ? scroller.scrollTop : window.scrollY;
+    const scroller = chatScrollRef.current;
+    const previousHeight = scroller?.scrollHeight ?? 0;
+    const previousTop = scroller?.scrollTop ?? 0;
     setOlderLoading(true);
     try {
       const data = await api.getMessages(groupId, token, undefined, oldest);
@@ -388,12 +385,9 @@ export function GroupScreen({
       window.requestAnimationFrame(() => {
         // Chèn tin cũ ở ĐẦU danh sách nên phải bù đúng phần chiều cao tăng thêm
         // vào scrollTop, nếu không đoạn đang đọc sẽ bị đẩy mất.
-        const now = scroller ? scroller.scrollHeight : document.documentElement.scrollHeight;
-        const growth = now - previousHeight;
-        if (growth > 0) {
-          if (scroller) scroller.scrollTop = previousTop + growth;
-          else scrollToOffset(previousTop + growth);
-        }
+        if (!scroller) return;
+        const growth = scroller.scrollHeight - previousHeight;
+        if (growth > 0) scroller.scrollTop = previousTop + growth;
       });
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : 'Không tải được tin nhắn cũ hơn.', 'bad');
@@ -832,7 +826,7 @@ export function GroupScreen({
               Mở đầu bằng một câu ngắn: hôm nay nhóm làm gì, ai cần gì.
             </EmptyState>
           ) : (
-            <div className="chat">
+            <div className="chat" ref={chatScrollRef}>
               {hasOlder ? (
                 <div className="chat-older">
                   <button type="button" className="btn-quiet btn-sm" onClick={() => void loadOlder()} disabled={olderLoading}>
@@ -869,7 +863,7 @@ export function GroupScreen({
                       </div>
                       {message.body || message.reply_to || message.image_url || editingMessageId === message.id ? (
                         <div className={message.body || message.reply_to ? 'msg-bubble' : 'msg-bubble media-only'}>
-                          {message.reply_to ? <div className="msg-reply-quote"><Avatar name={message.reply_to.sender_name} url={message.reply_to.avatar_url} size={18} /><span><strong>{message.reply_to.sender_name}</strong><span className="reply-preview">{message.reply_to.body || 'Ảnh đính kèm'}</span></span></div> : null}
+                          {message.reply_to ? <div className="msg-reply-quote"><Avatar name={message.reply_to.sender_name} url={message.reply_to.avatar_url} size={18} /><span><strong>{message.reply_to.sender_name}</strong><span className="reply-preview">{message.reply_to.body || '[Ảnh]'}</span></span></div> : null}
                           {editingMessageId === message.id ? <div className="message-edit"><textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} maxLength={4000} autoFocus /><div><button type="button" className="btn-quiet" onClick={() => setEditingMessageId(null)}>Huỷ</button><button type="button" className="btn btn-sm" onClick={() => void saveEditedMessage(message)}>Lưu</button></div></div> : message.body ? <p className="msg-body">{renderBody(message.body)}</p> : null}
                           {message.image_url ? <ChatImage url={message.image_url} token={token} /> : null}
                         </div>
@@ -886,7 +880,7 @@ export function GroupScreen({
           {Object.keys(typingUsers).length > 0 ? <p className="chat-typing" aria-live="polite">{Object.values(typingUsers).join(', ')} đang nhập…</p> : null}
           <form className="chat-form" onSubmit={submitMessage}>
             <input ref={imageInputRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={chooseImage} aria-label="Chọn ảnh để gửi" />
-            {replyTarget ? <div className="chat-compose-context"><span className="replying-label">Đang trả lời <strong>{replyTarget.sender_name}</strong><span className="replying-preview">{replyTarget.body || 'Ảnh đính kèm'}</span></span><button type="button" className="context-close" onClick={() => setReplyTarget(null)} aria-label="Huỷ trả lời" title="Huỷ trả lời"><Icon name="close" size={15} /></button></div> : null}
+            {replyTarget ? <div className="chat-compose-context"><span className="replying-label">Đang trả lời <strong>{replyTarget.sender_name}</strong><span className="replying-preview">{replyTarget.body || '[Ảnh]'}</span></span><button type="button" className="context-close" onClick={() => setReplyTarget(null)} aria-label="Huỷ trả lời" title="Huỷ trả lời"><Icon name="close" size={15} /></button></div> : null}
             {selectedImage ? <div className="chat-image-preview"><img src={imagePreviewUrl} alt="Ảnh sắp gửi" /><span>{selectedImage.name}<small>{(selectedImage.size / 1024 / 1024).toFixed(2)} MB · tối đa 5 MB</small></span><button type="button" className="context-close" onClick={() => { setSelectedImage(null); setImagePreviewUrl(''); if (imageInputRef.current) imageInputRef.current.value = ''; }} aria-label="Bỏ ảnh" title="Bỏ ảnh"><Icon name="close" size={15} /></button></div> : null}
             <div className="chat-compose-row">
               <button type="button" className="chat-tool" onClick={() => imageInputRef.current?.click()} disabled={sending} aria-label="Đính kèm ảnh" title="Đính kèm ảnh"><Icon name="image" /></button>

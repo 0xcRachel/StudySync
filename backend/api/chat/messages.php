@@ -98,7 +98,10 @@ run_api(static function (): void {
         if (!move_uploaded_file((string) $upload['tmp_name'], $directory . '/' . $imageName)) throw new RuntimeException('Không thể lưu ảnh đã tải lên.');
     }
 
-    $storedBody = $body !== '' ? $body : 'Ảnh đính kèm';
+    // Tin chỉ có ảnh phải là tin CHỈ CÓ ẢNH. Trước đây backend nhét chuỗi
+    // "Ảnh đính kèm" vào body làm nội dung thật, nên bong bóng hiện cả chữ
+    // lẫn ảnh dù người gửi không gõ gì.
+    $storedBody = $body;
     try {
         $insert = $pdo->prepare('INSERT INTO messages (group_id, sender_id, body, reply_to_id, image_name) VALUES (?, ?, ?, ?, ?)');
         $insert->execute([$groupId, $me['id'], $storedBody, $replyToId, $imageName]);
