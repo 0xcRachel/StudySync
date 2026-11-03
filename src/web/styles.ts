@@ -757,6 +757,11 @@ textarea.field {
 .chat-live-count { margin-left: auto; padding: 5px 9px; border-radius: 999px; background: var(--wash); color: var(--pine); font-size: 10px; font-weight: 550; }
 .chat-typing { min-height: 18px; margin: 0 0 3px; color: var(--ink-3); font-size: 11.5px; font-style: italic; }
 .chat:has(.msg) { min-height: 260px; padding: 8px 8px 22px 3px; }
+.chat-unit { display: grid; }
+.chat-day { display: flex; align-items: center; gap: 12px; margin: 22px 0 12px; color: var(--ink-3); font-size: 10.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; }
+.chat-day::before, .chat-day::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.chat-day span { padding: 3px 11px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.72); }
+.chat-older { display: grid; justify-content: center; margin: 0 0 12px; }
 .msg {
   position: relative;
   display: grid;
@@ -779,9 +784,26 @@ textarea.field {
 .msg.me { background: rgba(223,232,225,.42); }
 .msg.me .msg-body { color: var(--ink); }
 .msg.me .msg-name::after { content: ' · bạn'; color: var(--ink-3); font-weight: 400; }
-.msg-actions { display: flex; gap: 4px; margin-left: auto; opacity: 0; transition: opacity .16s ease; }
-.msg:hover .msg-actions, .msg:focus-within .msg-actions { opacity: 1; }
+.msg[data-continuation="true"] { margin-top: -6px; padding-block: 5px 12px; }
+.msg[data-continuation="true"]:hover { transform: none; }
+.msg-gutter { display: grid; justify-items: center; padding-top: 6px; }
+.msg-hover-time { color: var(--ink-3); font-size: 9.5px; font-variant-numeric: tabular-nums; opacity: 0; transition: opacity .16s ease; }
+@media (hover: hover) and (pointer: fine) {
+  .msg[data-continuation="true"]:hover .msg-hover-time,
+  .msg[data-continuation="true"]:focus-within .msg-hover-time { opacity: 1; }
+  .msg-head-quiet { position: absolute; top: -13px; right: 12px; z-index: 15; padding: 3px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); box-shadow: 0 5px 16px rgba(21,23,26,.11); }
+}
+@media (hover: none), (pointer: coarse) {
+  .msg-head-quiet { justify-content: flex-end; margin-bottom: -6px; }
+  .msg-hover-time { opacity: 1; }
+}
+.msg-actions { display: flex; gap: 4px; margin-left: auto; }
 .msg-actions:has(.message-reaction-menu) { opacity: 1; }
+/* Chuột mới ẩn thao tác; màn cảm ứng không có hover thì phải bấm được luôn. */
+@media (hover: hover) and (pointer: fine) {
+  .msg-actions { opacity: 0; transition: opacity .16s ease; }
+  .msg:hover .msg-actions, .msg:focus-within .msg-actions { opacity: 1; }
+}
 .msg-action { width: 32px; height: 30px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink-2); font-size: 16px; box-shadow: 0 3px 10px rgba(21,23,26,.06); }
 .msg-action:hover { color: var(--pine); border-color: var(--pine); }
 .msg-action.danger:hover, .msg-action.danger.confirm { width: auto; min-width: 32px; padding-inline: 7px; color: var(--danger); border-color: rgba(142,50,35,.45); }
@@ -1103,6 +1125,10 @@ textarea.field {
   .tabbar button[aria-current='true'] { color: var(--ink); }
   .tabbar .tcount { font-variant-numeric: tabular-nums; }
 
+  /* Tabbar cố định cao 60px tới tận 980px, nên ô soạn thảo phải né nó ở
+     mọi khổ nằm trong khoảng 641–980px, không chỉ dưới 640px. */
+  .chat-form { bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+
   .hero { grid-template-columns: minmax(0, 1fr); gap: 46px; padding-top: 40px; padding-bottom: 64px; }
   .hero-art { max-width: 480px; }
   .facts { grid-template-columns: minmax(0, 1fr); }
@@ -1133,7 +1159,6 @@ textarea.field {
   .phead { margin-bottom: 26px; }
   .psub { font-size: 13.5px; }
   .msg-body { font-size: 14px; }
-  .msg-actions { opacity: 1; }
   .chat-livebar { top: 4px; min-height: 42px; padding-inline: 11px; }
   .chat-live-count { max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chat:has(.msg) { min-height: 200px; padding: 4px 0 14px; }

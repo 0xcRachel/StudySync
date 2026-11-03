@@ -50,7 +50,7 @@ export function Rail({ user, groups, route, unread, onNavigate, onNewGroup, onSt
             );
           })}
           {groups.length === 0 ? <p className="rail-empty">Chưa có nhóm nào.</p> : null}
-          <button type="button" className="rail-add" data-tour="create-group-nav" onClick={onNewGroup}>
+          <button type="button" className="rail-add" onClick={onNewGroup}>
             Nhóm mới
           </button>
         </div>
@@ -123,7 +123,7 @@ export function TabBar({
           <button
             type="button"
             key={item.name}
-            data-tour={item.name === 'friends' ? 'friends-nav' : undefined}
+            data-tour={item.name === 'friends' ? 'friends-nav-tab' : undefined}
             aria-current={active ? 'true' : undefined}
             onClick={() => onNavigate({ name: item.name } as Route)}
           >

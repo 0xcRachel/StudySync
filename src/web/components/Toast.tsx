@@ -36,10 +36,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     timers.current.push(leave, remove);
   }, []);
 
+  // Một vùng thông báo duy nhất để toast không chồng lên nhau; lỗi cần người
+  // đọc màn hình nghe ngay nên vùng này chuyển sang assertive khi có lỗi.
+  const hasError = items.some((item) => item.tone === 'bad');
+
   return (
     <ToastContext.Provider value={push}>
       {children}
-      <div className="toast-wrap" role="status" aria-live="polite">
+      <div
+        className="toast-wrap"
+        role={hasError ? 'alert' : 'status'}
+        aria-live={hasError ? 'assertive' : 'polite'}
+        aria-atomic="false"
+      >
         {items.map((item) => {
           const classes = ['toast'];
           if (item.tone === 'bad') classes.push('bad');

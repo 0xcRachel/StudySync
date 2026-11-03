@@ -112,25 +112,20 @@ export function Notifications({
 
   const readAll = async () => {
     if (markingAll || unread === 0) return;
-    const pending = items.filter((item) => !item.read_at);
     setMarkingAll(true);
+    const stamp = new Date().toISOString();
     setItems((current) =>
       current.map((entry) =>
-        entry.read_at ? entry : { ...entry, read_at: new Date().toISOString() },
+        entry.read_at ? entry : { ...entry, read_at: stamp },
       ),
     );
-    let failed = 0;
-    for (const item of pending) {
-      try {
-        await api.markNotificationRead(item.id, token);
-      } catch {
-        failed += 1;
-      }
-    }
-    setMarkingAll(false);
-    if (failed > 0) {
-      toast(`Còn ${failed} thông báo chưa đánh dấu được.`, 'bad');
+    try {
+      await api.markAllNotificationsRead(token);
+    } catch {
+      toast('Chưa đánh dấu được tất cả thông báo.', 'bad');
       setReloadKey((key) => key + 1);
+    } finally {
+      setMarkingAll(false);
     }
   };
 

@@ -35,6 +35,11 @@ export function useGroupRealtime({
   const [typingUsers, setTypingUsers] = useState<Record<number, string>>({});
   const [readByUser, setReadByUser] = useState<Record<number, { messageId: number; name: string }>>({});
   const socketRef = useRef<WebSocket | null>(null);
+  // The server only reads trackMessages during the auth handshake, so it must
+  // not be an effect dependency: doing so tore the socket down on every
+  // Tasks/Chat/Members switch and reset presence, typing and read state.
+  const trackMessagesRef = useRef(trackMessages);
+  useEffect(() => { trackMessagesRef.current = trackMessages; }, [trackMessages]);
   const onMessageRef = useRef(onMessage);
   const onMessageUpdatedRef = useRef(onMessageUpdated);
   const onMessageDeletedRef = useRef(onMessageDeleted);
@@ -67,7 +72,7 @@ export function useGroupRealtime({
       socketRef.current = currentSocket;
       currentSocket.onopen = () => {
         if (disposed) return currentSocket.close();
-        currentSocket.send(JSON.stringify({ type: 'auth', token, groupId, trackMessages, lastMessageId: lastMessageId.current }));
+        currentSocket.send(JSON.stringify({ type: 'auth', token, groupId, trackMessages: trackMessagesRef.current, lastMessageId: lastMessageId.current }));
       };
       currentSocket.onmessage = (event) => {
         let packet: { type?: string; data?: unknown; userId?: number; name?: string; online?: boolean; onlineUserIds?: number[]; active?: boolean; messageId?: number; reads?: { userId: number; messageId: number; name: string }[] };
@@ -135,7 +140,7 @@ export function useGroupRealtime({
       setTypingUsers({});
       setReadByUser({});
     };
-  }, [enabled, trackMessages, groupId, token, userId, lastMessageId]);
+  }, [enabled, groupId, token, userId, lastMessageId]);
 
   const sendTyping = useCallback((active: boolean) => {
     const socket = socketRef.current;

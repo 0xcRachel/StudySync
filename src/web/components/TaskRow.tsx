@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Member, Task } from '../lib/api';
 import { NEXT_STATUS, STATUS_LABEL, formatDay } from '../lib/format';
 import { animateTaskCompletion } from '../lib/motion';
@@ -19,8 +19,18 @@ export function TaskRow({
 }) {
   const rowRef = useRef<HTMLDivElement | null>(null);
   const previous = useRef(task.status);
+  const assigneeKey = (task.assignees ?? []).map((person) => person.id).join(',');
   const [selected, setSelected] = useState<number[]>(task.assignees?.map((person) => person.id) ?? []);
   const [saving, setSaving] = useState(false);
+  const syncedKey = useRef(assigneeKey);
+
+  // Rows are keyed by id only, so the draft has to follow the server value
+  // instead of relying on a remount to reset it.
+  useEffect(() => {
+    if (syncedKey.current === assigneeKey) return;
+    syncedKey.current = assigneeKey;
+    setSelected(assigneeKey ? assigneeKey.split(',').map(Number) : []);
+  }, [assigneeKey]);
 
   useLayoutEffect(() => {
     if (!rowRef.current) return;

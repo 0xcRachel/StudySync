@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { Driver } from 'driver.js';
 import * as api from './lib/api';
 import type { Group, Notification, User } from './lib/api';
 import { clearSession, readSession, updateStoredUser, writeSession } from './lib/session';
@@ -148,8 +149,19 @@ function AppShell({
   const { user, token } = session;
   const activeGroup =
     route.name === 'group' ? groups.find((group) => group.id === route.groupId) : undefined;
+
+  // The local group list can be stale — e.g. the reader joined on another
+  // device — so refresh once before declaring a deep-linked group missing.
+  const retriedGroupRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (route.name !== 'group' || activeGroup || groupsLoading || groupsError) return;
+    if (retriedGroupRef.current === route.groupId) return;
+    retriedGroupRef.current = route.groupId;
+    onReloadGroups();
+  }, [route, activeGroup, groupsLoading, groupsError, onReloadGroups]);
+
   const missingGroup =
-    route.name === 'group' && !groupsLoading && !groupsError && groups.length >= 0 && !activeGroup;
+    route.name === 'group' && !groupsLoading && !groupsError && !activeGroup;
 
   return (
     <div className="app">
@@ -198,9 +210,14 @@ function AppShell({
                 <EmptyState
                   title="Nhóm này không còn trong danh sách của bạn."
                   action={
-                    <button type="button" className="btn" onClick={() => onNavigate(HOME)}>
-                      Về tổng quan
-                    </button>
+                    <div className="rowacts">
+                      <button type="button" className="btn" onClick={() => onNavigate(HOME)}>
+                        Về tổng quan
+                      </button>
+                      <button type="button" className="btn-quiet" onClick={onReloadGroups}>
+                        Thử lại
+                      </button>
+                    </div>
                   }
                 >
                   Có thể nhóm đã bị xoá, hoặc bạn đã rời nhóm. Kiểm tra lại lời mời trong thông báo.
@@ -283,10 +300,16 @@ function Workspace() {
 
     let disposed = false;
     let timer = 0;
+    let tour: Driver | null = null;
     const launch = async () => {
       const { driver } = await import('driver.js');
       if (disposed) return;
-      const tour = driver({
+      // Below 981px the rail is display:none, so the friends step has to point
+      // at the tab bar; otherwise driver.js highlights an invisible element.
+      const friendsTarget = window.matchMedia('(min-width: 981px)').matches
+        ? '[data-tour="friends-nav"]'
+        : '[data-tour="friends-nav-tab"]';
+      tour = driver({
         animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
         allowClose: true,
         allowScroll: true,
@@ -301,7 +324,7 @@ function Workspace() {
           { element: '[data-tour="overview"]', popover: { title: 'Tổng quan của bạn', description: 'Theo dõi số nhóm, việc đang mở và tiến độ học tập tại đây.', side: 'bottom', align: 'start' } },
           { element: '[data-tour="group-list"]', popover: { title: 'Không gian nhóm', description: 'Mỗi nhóm có danh sách công việc, thành viên và khu chat riêng.', side: 'bottom', align: 'start' } },
           { element: '[data-tour="create-group"]', popover: { title: 'Tạo nhóm học', description: 'Bắt đầu bằng cách tạo nhóm; sau đó bạn có thể mời bạn học cùng tham gia.', side: 'bottom', align: 'end' } },
-          { element: '[data-tour="friends-nav"]', popover: { title: 'Kết nối bạn học', description: 'Tìm và kết bạn tại đây để cộng tác, rồi mời họ vào nhóm.', side: 'right', align: 'center' } },
+          { element: friendsTarget, popover: { title: 'Kết nối bạn học', description: 'Tìm và kết bạn tại đây để cộng tác, rồi mời họ vào nhóm.', side: 'right', align: 'center' } },
         ],
         onDestroyed: () => {
           try { window.localStorage.setItem(storageKey, 'done'); } catch { /* storage can be disabled */ }
@@ -311,8 +334,17 @@ function Workspace() {
     };
     if (tourNonce > 0) void launch();
     else timer = window.setTimeout(() => { void launch(); }, 450);
-    return () => { disposed = true; window.clearTimeout(timer); };
-  }, [session, booting, groupsLoading, route.name, tourNonce]);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+      // Leaving Home mid-tour used to strand the overlay over the whole app.
+      tour?.destroy();
+      tour = null;
+    };
+    // Keyed on the id, not the session object: /me.php and profile edits replace
+    // the session on every save, which used to stack a second tour on top.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user.id, booting, groupsLoading, route.name, tourNonce]);
 
   useEffect(() => {
     if (!window.location.hash) window.history.replaceState(null, '', '#/');
@@ -426,8 +458,18 @@ function Workspace() {
       }
     };
     void refreshUnread();
-    const interval = window.setInterval(() => { void refreshUnread(); }, 12000);
-    return () => { active = false; controller.abort(); window.clearInterval(interval); };
+    const onVisibility = () => { if (document.visibilityState === 'visible') void refreshUnread(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      void refreshUnread();
+    }, 12000);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [token]);
 
   useEffect(() => {

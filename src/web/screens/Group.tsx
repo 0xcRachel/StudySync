@@ -1,17 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
 import * as api from '../lib/api';
 import type { Group, InviteCandidate, Member, Message, Task, TaskStatus, User } from '../lib/api';
 import {
   NEXT_STATUS,
   ROLE_LABEL,
-  formatStamp,
+  formatTime,
   isOnline,
   localStamp,
   percent,
   plural,
 } from '../lib/format';
-import { refreshScrollTriggers, useTabsInk } from '../lib/motion';
+import { refreshScrollTriggers, scrollToBottom, scrollToOffset, useTabsInk } from '../lib/motion';
 import { useToast } from '../components/Toast';
 import { TaskRow } from '../components/TaskRow';
 import { Avatar, EmptyState, ErrorBar, SkeletonRows } from '../components/ui';
@@ -35,6 +35,59 @@ const CHAT_GIFTS = [
   { icon: '🌟', label: 'Ngôi sao chăm chỉ' },
   { icon: '📚', label: 'Chồng sách tiếp sức' },
 ];
+
+/**
+ * Trang cuộn theo tài liệu (không phải một vùng scroll riêng), nên phải đo
+ * cửa sổ nhìn — nếu không mọi vị trí cuộn đều bị tính là "đang ở đáy".
+ */
+function isNearChatBottom(): boolean {
+  const viewportBottom = window.scrollY + window.innerHeight;
+  return document.documentElement.scrollHeight - viewportBottom < 160;
+}
+
+/** Escape hoặc bấm ra ngoài đóng popover; nếu không, chọn mục là đường thoát duy nhất. */
+function useDismissPopovers(isOpen: boolean, close: () => void) {
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') close(); };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('.chat-popover-anchor, .reaction-anchor, .emoji-menu, .gift-menu, .message-reaction-menu')) return;
+      close();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+    };
+  }, [isOpen, close]);
+}
+
+function dayKey(value?: string | null): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? '');
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime())
+    ? `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
+    : '';
+}
+
+function dayLabel(value?: string | null): string {
+  const key = dayKey(value);
+  if (!key) return '';
+  const today = dayKey(localStamp());
+  if (key === today) return 'Hôm nay';
+  const yesterday = dayKey(new Date(Date.now() - 86_400_000).toISOString().slice(0, 10));
+  if (key === yesterday) return 'Hôm qua';
+  const date = new Date(`${key.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  return `Thứ ${['nhật', 'hai', 'ba', 'tư', 'năm', 'sáu', 'bảy'][date.getDay()]}, ${date.getDate()}/${date.getMonth() + 1}`;
+}
+
+function sameMoment(a?: string | null, b?: string | null): boolean {
+  return Boolean(a && b) && dayKey(a) === dayKey(b);
+}
 
 function ChatImage({ url, token }: { url: string; token: string }) {
   const [src, setSrc] = useState('');
@@ -95,6 +148,8 @@ export function GroupScreen({
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [olderLoading, setOlderLoading] = useState(false);
+  const [hasOlder, setHasOlder] = useState(false);
 
   const [inviteQuery, setInviteQuery] = useState('');
   const [results, setResults] = useState<InviteCandidate[]>([]);
@@ -106,8 +161,8 @@ export function GroupScreen({
   const taskInputRef = useRef<HTMLInputElement | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
   const lastMessageIdRef = useRef(0);
+  const pendingScrollToBottom = useRef(false);
 
   useTabsInk(tabsRef, tab);
 
@@ -131,8 +186,10 @@ export function GroupScreen({
           ]);
           if (active) {
             setMessages(data);
+            setHasOlder(data.length >= 100);
             lastMessageIdRef.current = data.reduce((latest, message) => Math.max(latest, message.id), 0);
             setMembers(groupMembers);
+            pendingScrollToBottom.current = true;
           }
         } else {
           const data = await api.getMembers(groupId, token, controller.signal);
@@ -157,18 +214,27 @@ export function GroupScreen({
     };
   }, [groupId, token, tab, reloadKey]);
 
+  // A chat opens on its newest message. This has to run after React commits
+  // the rows, so a requestAnimationFrame scheduled from the fetch lands too
+  // early and measures the old document height.
+  useLayoutEffect(() => {
+    if (!pendingScrollToBottom.current || messages.length === 0) return;
+    pendingScrollToBottom.current = false;
+    scrollToBottom(true);
+  }, [messages]);
+
   const handleRealtimeMessage = useCallback((message: Message) => {
-    setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message].slice(-100));
-    const container = chatEndRef.current?.parentElement;
-    const nearBottom = container ? container.scrollHeight - container.scrollTop - container.clientHeight < 140 : true;
-    if (nearBottom) window.requestAnimationFrame(() => chatEndRef.current?.scrollIntoView({ block: 'nearest' }));
+    setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message].slice(-300));
+    // Only follow the thread when the reader is already at the bottom; the
+    // page scrolls with the document, so measure the viewport, not the panel.
+    if (isNearChatBottom()) window.requestAnimationFrame(() => scrollToBottom(false));
   }, []);
   const handleRealtimeTasks = useCallback((next: Task[]) => setTasks(next), []);
   const handleRealtimeMembers = useCallback((next: Member[]) => setMembers(next), []);
   const handleRealtimeMessageUpdated = useCallback((message: Message) => setMessages((current) => current.map((item) => item.id === message.id ? message : item)), []);
   const handleRealtimeMessageDeleted = useCallback((messageId: number) => setMessages((current) => current.filter((item) => item.id !== messageId)), []);
   const { status: realtimeStatus, onlineUserIds, typingUsers, readByUser, sendTyping, sendRead } = useGroupRealtime({
-    enabled: !loading,
+    enabled: true,
     trackMessages: tab === 'chat',
     groupId,
     token,
@@ -190,11 +256,14 @@ export function GroupScreen({
   useEffect(() => {
     if (tab !== 'chat') return undefined;
     const interval = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
       void api.getMessages(groupId, token).then((data) => {
         setMessages((current) => {
           const merged = new Map(current.map((message) => [message.id, message]));
+          // Keep rows the reader paged back in; the endpoint only returns the
+          // newest window, so slicing to it would drop loaded history.
           data.forEach((message) => merged.set(message.id, { ...merged.get(message.id), ...message }));
-          return [...merged.values()].sort((a, b) => a.id - b.id).slice(-100);
+          return [...merged.values()].sort((a, b) => a.id - b.id).slice(-300);
         });
         lastMessageIdRef.current = data.reduce((latest, message) => Math.max(latest, message.id), lastMessageIdRef.current);
       }).catch(() => undefined);
@@ -251,6 +320,39 @@ export function GroupScreen({
     setComposerOpen(true);
     window.requestAnimationFrame(() => taskInputRef.current?.focus());
   };
+
+  const closePopovers = useCallback(() => {
+    setEmojiOpen(false);
+    setGiftOpen(false);
+    setReactionPickerId(null);
+  }, []);
+  useDismissPopovers(emojiOpen || giftOpen || reactionPickerId !== null, closePopovers);
+
+  /** Nạp thêm tin nhắn cũ và giữ nguyên đoạn thread đang đọc thay vì nhảy xuống đáy. */
+  const loadOlder = useCallback(async () => {
+    if (olderLoading || messages.length === 0) return;
+    const oldest = messages.reduce((lowest, message) => Math.min(lowest, message.id), Number.POSITIVE_INFINITY);
+    const previousHeight = document.documentElement.scrollHeight;
+    const previousTop = window.scrollY;
+    setOlderLoading(true);
+    try {
+      const data = await api.getMessages(groupId, token, undefined, oldest);
+      setMessages((current) => {
+        const merged = new Map(data.map((message) => [message.id, message]));
+        current.forEach((message) => merged.set(message.id, { ...merged.get(message.id), ...message }));
+        return [...merged.values()].sort((a, b) => a.id - b.id);
+      });
+      setHasOlder(data.length >= 100);
+      window.requestAnimationFrame(() => {
+        const growth = document.documentElement.scrollHeight - previousHeight;
+        if (growth > 0) scrollToOffset(previousTop + growth);
+      });
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : 'Không tải được tin nhắn cũ hơn.', 'bad');
+    } finally {
+      setOlderLoading(false);
+    }
+  }, [groupId, token, olderLoading, messages, toast]);
 
   const cycle = useCallback(
     async (task: Task) => {
@@ -329,7 +431,7 @@ export function GroupScreen({
       const created = await api.sendMessage(groupId, body, token, replyTarget?.id, selectedImage, mentionIds);
       setMessages((current) => current.some((message) => message.id === created.id)
         ? current
-        : [...current, { ...created, created_at: created.created_at ?? localStamp() }].slice(-100));
+        : [...current, { ...created, created_at: created.created_at ?? localStamp() }].slice(-300));
       lastMessageIdRef.current = Math.max(lastMessageIdRef.current, created.id);
       setChatDraft('');
       setReplyTarget(null);
@@ -338,7 +440,7 @@ export function GroupScreen({
       if (imageInputRef.current) imageInputRef.current.value = '';
       window.requestAnimationFrame(() => {
         chatInputRef.current?.focus();
-        chatEndRef.current?.scrollIntoView({ block: 'nearest' });
+        scrollToBottom(false);
       });
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : 'Không gửi được tin nhắn.', 'bad');
@@ -396,10 +498,11 @@ export function GroupScreen({
   const startEditingMessage = (message: Message) => { setEditingMessageId(message.id); setEditDraft(message.body); setDeleteConfirmId(null); };
   const saveEditedMessage = async (message: Message) => {
     const body = editDraft.trim();
-    if (!body || body === message.body) { setEditingMessageId(null); return; }
+    // An image-only message is allowed to have an empty caption, same as the API.
+    if (body === message.body || (body === '' && !message.image_url)) { setEditingMessageId(null); return; }
     try {
-      await api.editMessage(message.id, body, token);
-      setMessages((current) => current.map((item) => item.id === message.id ? { ...item, body, edited_at: new Date().toISOString() } : item));
+      const saved = await api.editMessage(message.id, body, token);
+      setMessages((current) => current.map((item) => item.id === message.id ? { ...item, body: saved.body, edited_at: localStamp() } : item));
       setEditingMessageId(null);
     } catch (caught) { toast(caught instanceof Error ? caught.message : 'Không sửa được tin nhắn.', 'bad'); }
   };
@@ -478,6 +581,26 @@ export function GroupScreen({
   const canInvite = members.some(
     (member) => member.id === user.id && (member.role === 'owner' || member.role === 'admin'),
   );
+  // Backend moderation of other people's messages allows owner/admin, so the
+  // delete control has to appear for them too, not only for the sender.
+  const canModerate = canInvite;
+  const chatRows = messages.map((message, index) => {
+    const previous = index > 0 ? messages[index - 1] : undefined;
+    return {
+      message,
+      showDay: !previous || !sameMoment(previous.created_at, message.created_at),
+      continuation: Boolean(
+        previous
+        && sameMoment(previous.created_at, message.created_at)
+        && previous.sender_id === message.sender_id
+        && !message.reply_to
+        && !previous.reply_to
+        && !message.image_url
+        && !previous.image_url,
+      ),
+    };
+  });
+  const latestDay = messages.length > 0 ? dayLabel(messages[messages.length - 1].created_at) : '';
   const headerMeta = tasksLoaded
     ? `${tasks.length} việc, ${doneCount} đã xong`
     : group
@@ -627,7 +750,7 @@ export function GroupScreen({
             />
           ) : (
             visible.map((task) => (
-              <TaskRow key={`${task.id}-${task.assignees?.map((person) => person.id).join('-')}`} task={task} busy={busyId === task.id} onCycle={cycle} members={members} onAssign={assignTask} />
+              <TaskRow key={task.id} task={task} busy={busyId === task.id} onCycle={cycle} members={members} onAssign={assignTask} />
             ))
           )}
 
@@ -644,7 +767,15 @@ export function GroupScreen({
         <section id="panel-chat" role="tabpanel" aria-labelledby="tab-chat">
           <div className="chat-livebar" aria-live="polite">
             <span className={`chat-live-dot ${realtimeStatus}`} />
-            <span>{realtimeStatus === 'connected' ? 'Đang kết nối trực tiếp' : realtimeStatus === 'connecting' ? 'Đang kết nối chat…' : 'Đang kết nối lại…'}</span>
+            <span>
+              {realtimeStatus === 'connected'
+                ? 'Đang kết nối trực tiếp'
+                : realtimeStatus === 'offline'
+                  ? 'Không đồng bộ trực tiếp được — hãy tải lại trang.'
+                  : realtimeStatus === 'connecting'
+                    ? 'Đang kết nối chat…'
+                    : 'Đang kết nối lại…'}
+            </span>
             {realtimeStatus === 'connected' ? <span className="chat-live-count">{Math.max(onlineUserIds.length - (onlineUserIds.includes(user.id) ? 1 : 0), 0)} thành viên khác đang trực tuyến</span> : null}
           </div>
           {loading ? (
@@ -655,35 +786,53 @@ export function GroupScreen({
             </EmptyState>
           ) : (
             <div className="chat">
-              {messages.map((message) => (
-                <article
-                  className={message.sender_id === user.id ? 'msg me' : 'msg'}
-                  key={message.id}
-                >
-                  <Avatar name={message.sender_name} url={message.avatar_url} size={30} />
-                  <div className="msg-content">
-                    <div className="msg-head">
-                      <span className="msg-name">{message.sender_name}</span>
-                      <span className="msg-time">{formatStamp(message.created_at)}{message.edited_at ? ' · đã sửa' : ''}</span>
-                      <div className="msg-actions">
-                        <div className="reaction-anchor"><button type="button" className="msg-action" onClick={() => setReactionPickerId((current) => current === message.id ? null : message.id)} aria-label="Thả biểu cảm">☺</button>{reactionPickerId === message.id ? <div className="message-reaction-menu">{CHAT_REACTIONS.map((emoji) => <button type="button" key={emoji} onClick={() => void reactToMessage(message, emoji)}>{emoji}</button>)}</div> : null}</div>
-                        <button type="button" className="msg-action" onClick={() => { setReplyTarget(message); window.requestAnimationFrame(() => chatInputRef.current?.focus()); }} aria-label={`Trả lời ${message.sender_name}`}>↩</button>
-                        {message.sender_id === user.id ? <button type="button" className="msg-action" onClick={() => startEditingMessage(message)} aria-label="Sửa tin nhắn">✎</button> : null}
-                        {message.sender_id === user.id ? <button type="button" className={deleteConfirmId === message.id ? 'msg-action danger confirm' : 'msg-action danger'} onClick={() => void removeMessage(message)} aria-label={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'}>{deleteConfirmId === message.id ? 'Xóa?' : '×'}</button> : null}
+              {hasOlder ? (
+                <div className="chat-older">
+                  <button type="button" className="btn-quiet btn-sm" onClick={() => void loadOlder()} disabled={olderLoading}>
+                    {olderLoading ? 'Đang tải…' : 'Tải tin nhắn cũ hơn'}
+                  </button>
+                </div>
+              ) : null}
+              {chatRows.map(({ message, showDay, continuation }) => (
+                <div className="chat-unit" key={`unit-${message.id}`}>
+                  {showDay ? <p className="chat-day"><span>{dayLabel(message.created_at)}</span></p> : null}
+                  <article
+                    className={message.sender_id === user.id ? 'msg me' : 'msg'}
+                    key={message.id}
+                    data-continuation={continuation ? 'true' : 'false'}
+                  >
+                    {continuation ? (
+                      <span className="msg-gutter" aria-hidden="true">
+                        <span className="msg-hover-time">{formatTime(message.created_at)}</span>
+                      </span>
+                    ) : (
+                      <Avatar name={message.sender_name} url={message.avatar_url} size={30} />
+                    )}
+                    <div className="msg-content">
+                      <div className={continuation ? 'msg-head msg-head-quiet' : 'msg-head'}>
+                        {continuation ? null : <span className="msg-name">{message.sender_name}</span>}
+                        {continuation ? null : <span className="msg-time">{formatTime(message.created_at)}{message.edited_at ? ' · đã sửa' : ''}</span>}
+                        {continuation && message.edited_at ? <span className="msg-time">đã sửa</span> : null}
+                        <div className="msg-actions">
+                            <div className="reaction-anchor"><button type="button" className="msg-action" onClick={() => setReactionPickerId((current) => current === message.id ? null : message.id)} aria-label="Thả biểu cảm" aria-expanded={reactionPickerId === message.id}>☺</button>{reactionPickerId === message.id ? <div className="message-reaction-menu">{CHAT_REACTIONS.map((emoji) => <button type="button" key={emoji} onClick={() => void reactToMessage(message, emoji)}>{emoji}</button>)}</div> : null}</div>
+                            <button type="button" className="msg-action" onClick={() => { setReplyTarget(message); window.requestAnimationFrame(() => chatInputRef.current?.focus()); }} aria-label={`Trả lời ${message.sender_name}`}>↩</button>
+                            {message.sender_id === user.id ? <button type="button" className="msg-action" onClick={() => startEditingMessage(message)} aria-label="Sửa tin nhắn">✎</button> : null}
+                            {message.sender_id === user.id || canModerate ? <button type="button" className={deleteConfirmId === message.id ? 'msg-action danger confirm' : 'msg-action danger'} onClick={() => void removeMessage(message)} aria-label={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'}>{deleteConfirmId === message.id ? 'Xóa?' : '×'}</button> : null}
+                        </div>
                       </div>
+                      {message.reply_to ? <div className="msg-reply-quote"><span className="reply-connector" aria-hidden="true" /><Avatar name={message.reply_to.sender_name} url={message.reply_to.avatar_url} size={18} /><span><strong>{message.reply_to.sender_name}</strong><span className="reply-preview">{message.reply_to.body || 'Ảnh đính kèm'}</span></span></div> : null}
+                      {editingMessageId === message.id ? <div className="message-edit"><textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} maxLength={4000} autoFocus /><div><button type="button" className="btn-quiet" onClick={() => setEditingMessageId(null)}>Huỷ</button><button type="button" className="btn btn-sm" onClick={() => void saveEditedMessage(message)}>Lưu</button></div></div> : (message.body || !message.image_url) ? <p className="msg-body">{renderBody(message.body)}</p> : null}
+                      {message.reactions?.length ? <div className="msg-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction.emoji} className={reaction.reacted ? 'msg-reaction active' : 'msg-reaction'} aria-pressed={reaction.reacted} onClick={() => void reactToMessage(message, reaction.emoji)}>{reaction.emoji}<span>{reaction.count}</span></button>)}</div> : null}
+                      {message.image_url ? <ChatImage url={message.image_url} token={token} /> : null}
+                      {message.id === latestOwnMessageId && latestReaders.length > 0 ? <div className="message-read">Đã xem bởi {latestReaders.slice(0, 3).join(', ')}{latestReaders.length > 3 ? ` và ${latestReaders.length - 3} người khác` : ''}</div> : null}
                     </div>
-                    {message.reply_to ? <div className="msg-reply-quote"><span className="reply-connector" aria-hidden="true" /><Avatar name={message.reply_to.sender_name} url={message.reply_to.avatar_url} size={18} /><span><strong>{message.reply_to.sender_name}</strong><span className="reply-preview">{message.reply_to.body || 'Ảnh đính kèm'}</span></span></div> : null}
-                    {editingMessageId === message.id ? <div className="message-edit"><textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} maxLength={4000} autoFocus /><div><button type="button" className="btn-quiet" onClick={() => setEditingMessageId(null)}>Huỷ</button><button type="button" className="btn btn-sm" onClick={() => void saveEditedMessage(message)}>Lưu</button></div></div> : <p className="msg-body">{renderBody(message.body)}</p>}
-                    {message.reactions?.length ? <div className="msg-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction.emoji} className={reaction.reacted ? 'msg-reaction active' : 'msg-reaction'} aria-pressed={reaction.reacted} onClick={() => void reactToMessage(message, reaction.emoji)}>{reaction.emoji}<span>{reaction.count}</span></button>)}</div> : null}
-                    {message.image_url ? <ChatImage url={message.image_url} token={token} /> : null}
-                    {message.id === latestOwnMessageId && latestReaders.length > 0 ? <div className="message-read">Đã xem bởi {latestReaders.slice(0, 3).join(', ')}{latestReaders.length > 3 ? ` và ${latestReaders.length - 3} người khác` : ''}</div> : null}
-                  </div>
-                </article>
+                  </article>
+                </div>
               ))}
+              <p className="sr-only" role="status">{latestDay}</p>
             </div>
           )}
-          <div ref={chatEndRef} />
-          {Object.keys(typingUsers).length > 0 ? <p className="chat-typing">{Object.values(typingUsers).join(', ')} đang nhập…</p> : null}
+          {Object.keys(typingUsers).length > 0 ? <p className="chat-typing" aria-live="polite">{Object.values(typingUsers).join(', ')} đang nhập…</p> : null}
           <form className="chat-form" onSubmit={submitMessage}>
             <input ref={imageInputRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={chooseImage} aria-label="Chọn ảnh để gửi" />
             {replyTarget ? <div className="chat-compose-context"><span className="replying-label">Đang trả lời <strong>{replyTarget.sender_name}</strong><span className="replying-preview">{replyTarget.body || 'Ảnh đính kèm'}</span></span><button type="button" className="context-close" onClick={() => setReplyTarget(null)} aria-label="Huỷ trả lời">×</button></div> : null}

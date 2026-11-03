@@ -69,6 +69,26 @@ export function scrollToTop(immediate = true): void {
   }
 }
 
+/**
+ * Nhảy tới toạ độ tuyệt đối. Với cú nhảy tức thời phải dùng scroll gốc:
+ * Lenis giữ bộ đệm max-scroll cũ nên sẽ kẹp lệnh cuộn về giữa trang, và nó
+ * vẫn theo dõi scroll do trình duyệt điều khiển nên không bị lệch trạng thái.
+ */
+export function scrollToOffset(top: number, immediate = true): void {
+  if (typeof window === 'undefined') return;
+  if (lenis && !immediate) {
+    lenis.scrollTo(top, { force: true });
+    return;
+  }
+  if (immediate && lenis) lenis.resize();
+  window.scrollTo({ top, behavior: 'auto' });
+}
+
+export function scrollToBottom(immediate = true): void {
+  if (typeof window === 'undefined') return;
+  scrollToOffset(document.documentElement.scrollHeight, immediate);
+}
+
 let refreshHandle = 0;
 
 export function refreshScrollTriggers(): void {
@@ -195,6 +215,10 @@ export function useTabsInk(
     setBar(true);
     const observer = new ResizeObserver(() => setBar(false));
     observer.observe(el);
+    // Badge counts appear after the data lands, which changes the active tab's
+    // width without changing the container's — watch both or the ink drifts.
+    const active = el.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (active) observer.observe(active);
     return () => observer.disconnect();
   }, [container, activeKey]);
 }

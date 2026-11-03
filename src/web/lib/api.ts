@@ -212,8 +212,11 @@ export const updateTaskStatus = (task: Task, status: TaskStatus, token: string) 
 
 /* ---------- Group detail ---------- */
 
-export const getMessages = (groupId: number, token: string, signal?: AbortSignal) =>
-  request<Message[]>(`/messages.php?group_id=${groupId}`, { token, signal });
+export const getMessages = (groupId: number, token: string, signal?: AbortSignal, beforeId?: number) => {
+  const params = new URLSearchParams({ group_id: String(groupId), limit: '100' });
+  if (beforeId) params.set('before_id', String(beforeId));
+  return request<Message[]>(`/messages.php?${params.toString()}`, { token, signal });
+};
 
 export const sendMessage = (groupId: number, body: string, token: string, replyToId?: number | null, image?: File | null, mentionIds: number[] = []) => {
   if (image) {
@@ -281,6 +284,9 @@ export const getNotifications = (token: string, signal?: AbortSignal) =>
 
 export const markNotificationRead = (id: number, token: string) =>
   request<unknown>('/notifications.php', { method: 'PATCH', body: { id }, token });
+
+export const markAllNotificationsRead = (token: string) =>
+  request<{ updated: number }>('/notifications.php', { method: 'PATCH', body: { action: 'mark_all' }, token });
 
 export const updateProfile = (payload: { name: string; username: string; avatar_url: string; bio: string }, token: string) =>
   request<{ user: User }>('/profile.php', { method: 'PATCH', body: payload, token });
