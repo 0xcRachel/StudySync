@@ -53,16 +53,31 @@ function consumeOAuthRedirect(): Session | null {
   return null;
 }
 
-/** CSS, font, title: gắn một lần vào document khi web app khởi động. */
+/**
+ * CSS là một chuỗi nhúng vào <style> tự tạo, nên Fast Refresh chỉ đổi nó khi
+ * effect chạy lại. Để deps rỗng thì sửa styles.ts một mình sẽ giữ nguyên CSS
+ * cũ trong khi JSX đã đổi — giao diện thành nửa mới nửa cũ cho tới khi reload
+ * cả trang. Depend vào CSS và cập nhật đúng node đó là hết.
+ */
+function useDesignSystem(): void {
+  useEffect(() => {
+    const id = 'studysync-design-system';
+    let style = document.getElementById(id) as HTMLStyleElement | null;
+    if (!style) {
+      style = document.createElement('style');
+      style.id = id;
+      style.setAttribute('data-studysync', 'design-system');
+      document.head.appendChild(style);
+    }
+    style.textContent = CSS;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [CSS]);
+}
+
+/** Font, mô tả, title, ngôn ngữ: gắn một lần khi web app khởi động. */
 function useDocumentChrome(): void {
   useEffect(() => {
     const nodes: HTMLElement[] = [];
-
-    const style = document.createElement('style');
-    style.setAttribute('data-studysync', 'design-system');
-    style.textContent = CSS;
-    document.head.appendChild(style);
-    nodes.push(style);
 
     const preconnect = (href: string, crossOrigin: boolean) => {
       const link = document.createElement('link');
@@ -586,6 +601,7 @@ function Workspace() {
 }
 
 export function WebApp() {
+  useDesignSystem();
   useDocumentChrome();
   return (
     <ToastProvider>
