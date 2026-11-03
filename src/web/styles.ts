@@ -837,11 +837,14 @@ textarea.field {
 .msg-reaction { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.62); font-size: 12px; }
 .msg-reaction span { color: var(--ink-3); font-size: 10px; font-variant-numeric: tabular-nums; }
 .msg-reaction.active { border-color: #8aa697; background: var(--wash); }
-.msg-reply-quote { position: relative; display: flex; align-items: center; gap: 8px; width: fit-content; max-width: min(100%, 430px); margin: 0 0 5px; padding: 6px 11px 6px 12px; border-left: 2px solid #80998b; border-radius: 0 9px 9px 0; background: rgba(230,232,225,.62); font-size: 12px; color: var(--ink-3); }
-.msg.me .msg-reply-quote { border-left: 0; border-right: 2px solid #80998b; border-radius: 9px 0 9px 9px; padding: 6px 12px 6px 11px; }
+/* Mẩu trả lời + bubble chia chung một mép (flex-start / flex-end), nên đường
+   nối chân thật nhất là kéo mép nhấn của mẩu xuống chạm đúng góc tail bubble.
+   Trước đây connector là span tuyệt đối neo theo bề rộng fit-content của mẩu,
+   vì vậy nó lơ lửng ra ngoài cột nội dung. */
+.msg-reply-quote { position: relative; display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; margin: 0 0 7px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 9px; background: rgba(230,232,225,.55); font-size: 12px; color: var(--ink-3); }
+.msg-reply-quote::after { content: ''; position: absolute; left: 6px; bottom: -7px; width: 2px; height: 7px; background: #8aa697; border-radius: 0 0 2px 2px; }
+.msg.me .msg-reply-quote::after { left: auto; right: 6px; }
 .msg-reply-quote .avatar { border-radius: 50%; }
-.reply-connector { position: absolute; width: 13px; height: 13px; left: -15px; bottom: -8px; border-left: 1px solid #aeb6aa; border-top: 1px solid #aeb6aa; border-radius: 7px 0 0; }
-.msg.me .reply-connector { left: auto; right: -15px; border-left: 0; border-right: 1px solid #aeb6aa; border-radius: 0 7px 0 0; }
 .msg-reply-quote strong { display: block; color: var(--ink-2); font-weight: 600; }
 .reply-preview { display: block; max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-mention { color: #315fbc; background: rgba(71,111,211,.1); border-radius: 3px; padding: 0 2px; font-weight: 550; }
