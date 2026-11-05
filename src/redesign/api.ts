@@ -3,7 +3,7 @@ import { API_BASE_URL } from '../config/api';
 export type User = { id: number; name: string; email: string; avatar_url?: string | null; bio?: string | null; last_seen_at?: string | null };
 export type Group = { id: number; name: string; description?: string | null; task_count?: number; completed_count?: number };
 export type Task = { id: number; group_id: number; title: string; status: 'todo' | 'doing' | 'done'; priority?: 'low' | 'medium' | 'high'; due_at?: string | null; assignees?: Pick<User, 'id' | 'name' | 'avatar_url'>[] };
-export type Message = { id: number; group_id: number; sender_id: number; sender_name: string; body: string; created_at?: string; edited_at?: string | null; image_url?: string | null; reactions?: { emoji: string; count: number; reacted: boolean }[] };
+export type Message = { id: number; group_id: number; sender_id: number; sender_name: string; body: string; created_at?: string; edited_at?: string | null; image_url?: string | null; reply_to_id?: number | null; reply_to?: { id: number; sender_name: string; body: string; has_image: boolean } | null; reactions?: { emoji: string; count: number; reacted: boolean }[] };
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   // FormData phải để RN tự sinh Content-Type kèm boundary; ghim

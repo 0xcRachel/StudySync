@@ -61,6 +61,10 @@ const roleLabel: Record<string, string> = {
   member: "Thành viên",
 };
 const weekdayNames = ["Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"];
+// Cùng bộ với bản web (src/web/screens/Group.tsx) để hai màn hình không
+// hiển thị hai danh sách cảm xúc khác nhau.
+const CHAT_EMOJIS = ["😀", "😂", "🥹", "😍", "🤔", "👏", "🙏", "🔥", "❤️", "🎉", "✅", "✨"];
+const CHAT_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉", "👏", "✅", "🙏"];
 
 function todayLabel() {
   const now = new Date();
@@ -416,6 +420,12 @@ function GroupScreen({
   const [picking, setPicking] = useState(false);
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<api.Message | null>(null);
+  const [reactionPickerFor, setReactionPickerFor] = useState<number | null>(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionIds, setMentionIds] = useState<number[]>([]);
+  const [olderLoading, setOlderLoading] = useState(false);
   const [showTask, setShowTask] = useState(false);
   const [chatLoaded, setChatLoaded] = useState(false);
   const lastMessageId = useRef(0);
@@ -483,8 +493,14 @@ function GroupScreen({
         setMembers(nextMembers);
       }
       if (tab === "chat") {
-        const next = await api.getMessages(group.id, token);
+        // Danh sách thành viên cần ngay ở tab chat cho nút nhắc tên (@),
+        // nếu chỉ tải ở tab Thành viên thì popover rỗng lần đầu mở chat.
+        const [next, nextMembers] = await Promise.all([
+          api.getMessages(group.id, token),
+          api.getMembers(group.id, token).catch(() => []),
+        ]);
         setMessages(next);
+        setMembers(nextMembers);
         lastMessageId.current = next.reduce(
           (latest, message) => Math.max(latest, message.id),
           0,
@@ -650,7 +666,14 @@ function GroupScreen({
         );
         setEditingMessageId(null);
       } else {
-        const created = await api.sendMessage(group.id, body, token, null, [], attachment);
+        const created = await api.sendMessage(
+          group.id,
+          body,
+          token,
+          replyTarget?.id ?? null,
+          mentionIds,
+          attachment,
+        );
         lastMessageId.current = Math.max(lastMessageId.current, created.id);
         setMessages((current) =>
           current.some((item) => item.id === created.id)
@@ -660,6 +683,8 @@ function GroupScreen({
         setAttachment(null);
       }
       setText("");
+      setReplyTarget(null);
+      setMentionIds([]);
     } catch (e) {
       toast(
         e instanceof Error ? e.message : "Không thể gửi tin nhắn.",
@@ -667,9 +692,10 @@ function GroupScreen({
       );
     }
   };
-  const react = async (message: api.Message) => {
+  const reactToMessage = async (message: api.Message, emoji: string) => {
+    setReactionPickerFor(null);
     try {
-      const result = await api.reactMessage(message.id, "❤️", token);
+      const result = await api.reactMessage(message.id, emoji, token);
       setMessages((current) =>
         current.map((item) =>
           item.id === message.id
@@ -680,6 +706,36 @@ function GroupScreen({
     } catch (e) {
       toast(e instanceof Error ? e.message : "Không thể thả cảm xúc.", "error");
     }
+  };
+  /** Nạp tin cũ hơn mà không nhảy xuống đáy: danh sách luôn.sort theo id. */
+  const loadOlder = async () => {
+    if (olderLoading || messages.length === 0) return;
+    const oldest = messages.reduce(
+      (lowest, message) => Math.min(lowest, message.id),
+      Number.POSITIVE_INFINITY,
+    );
+    setOlderLoading(true);
+    try {
+      const older = await api.getMessages(group.id, token, oldest);
+      setMessages((current) => {
+        const merged = new Map(current.map((item) => [item.id, item]));
+        older.forEach((message) =>
+          merged.set(message.id, { ...merged.get(message.id), ...message }),
+        );
+        return [...merged.values()].sort((a, b) => a.id - b.id).slice(-300);
+      });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Không tải được tin cũ.", "error");
+    } finally {
+      setOlderLoading(false);
+    }
+  };
+  const insertMention = (member: { id: number; name: string }) => {
+    setText((current) => `${current}${current.endsWith(" ") || current === "" ? "" : " "}@${member.name} `);
+    setMentionIds((current) =>
+      current.includes(member.id) ? current : [...current, member.id],
+    );
+    setMentionOpen(false);
   };
   const removeMessage = async (message: api.Message) => {
     try {
@@ -723,6 +779,14 @@ function GroupScreen({
       toast(e instanceof Error ? e.message : "Không thể cập nhật.", "error");
     }
   };
+  const latestOwnMessageId =
+    [...messages].reverse().find((message) => message.sender_id === user.id)?.id ?? 0;
+  const readers = Object.entries(realtime.readByUser)
+    .filter(
+      ([readerId, value]) =>
+        Number(readerId) !== user.id && value.messageId >= latestOwnMessageId,
+    )
+    .map(([, value]) => value.name);
   return (
     <SafeAreaView style={styles.appScreen}>
       <View style={styles.innerHeader}>
@@ -835,7 +899,19 @@ function GroupScreen({
                 Chưa có tin nhắn. Hãy bắt đầu cuộc trò chuyện.
               </Text>
             ) : (
-              messages.map((message) => (
+              <>
+                <Pressable
+                  onPress={() => void loadOlder()}
+                  disabled={olderLoading}
+                  style={styles.olderButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Tải tin nhắn cũ hơn"
+                >
+                  <Text style={styles.messageAction}>
+                    {olderLoading ? "Đang tải…" : "Tải tin cũ hơn"}
+                  </Text>
+                </Pressable>
+                {messages.map((message) => (
                 <View
                   key={message.id}
                   style={[
@@ -849,6 +925,17 @@ function GroupScreen({
                       : message.sender_name}
                     {message.edited_at ? " · đã sửa" : ""}
                   </Text>
+                  {message.reply_to ? (
+                    <View style={styles.messageReplyQuote}>
+                      <Text style={styles.messageReplyName}>
+                        {message.reply_to.sender_name}
+                      </Text>
+                      <Text style={styles.messageReplyBody} numberOfLines={2}>
+                        {message.reply_to.body ||
+                          (message.reply_to.has_image ? "Ảnh" : "")}
+                      </Text>
+                    </View>
+                  ) : null}
                   {message.body ? (
                     <Text style={styles.messageBody}>{message.body}</Text>
                   ) : null}
@@ -876,8 +963,23 @@ function GroupScreen({
                     </Text>
                   ) : null}
                   <View style={styles.messageActions}>
-                    <Pressable onPress={() => void react(message)}>
-                      <Text style={styles.messageAction}>♡ Cảm xúc</Text>
+                    <Pressable
+                      onPress={() =>
+                        setReactionPickerFor((current) =>
+                          current === message.id ? null : message.id,
+                        )
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel="Thả cảm xúc"
+                    >
+                      <Text style={styles.messageAction}>Cảm xúc</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setReplyTarget(message)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Trả lời ${message.sender_name}`}
+                    >
+                      <Text style={styles.messageAction}>Trả lời</Text>
                     </Pressable>
                     {message.sender_id === user.id ? (
                       <Pressable
@@ -897,10 +999,40 @@ function GroupScreen({
                       </Pressable>
                     ) : null}
                   </View>
+                  {reactionPickerFor === message.id ? (
+                    <View style={styles.reactionRow}>
+                      {CHAT_REACTIONS.map((emoji) => (
+                        <Pressable
+                          key={emoji}
+                          onPress={() => void reactToMessage(message, emoji)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Thả ${emoji}`}
+                        >
+                          <Text style={styles.reactionChip}>{emoji}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : null}
                 </View>
-              ))
+                ))}
+              </>
             )}
           </ScrollView>
+          {readers.length > 0 ? (
+            <Text style={styles.pageSubtitle}>
+              {readers.join(", ")} đã đọc
+            </Text>
+          ) : null}
+          {replyTarget ? (
+            <View style={styles.replyBar}>
+              <Text style={styles.replyBarText} numberOfLines={1}>
+                Trả lời {replyTarget.sender_name}: {replyTarget.body || "Ảnh"}
+              </Text>
+              <Pressable onPress={() => setReplyTarget(null)}>
+                <Text style={styles.attachmentRemove}>Huỷ</Text>
+              </Pressable>
+            </View>
+          ) : null}
           {attachment ? (
             <View style={styles.attachmentBar}>
               <Image source={{ uri: attachment.uri }} style={styles.attachmentThumb} />
@@ -910,7 +1042,42 @@ function GroupScreen({
               </Pressable>
             </View>
           ) : null}
-          <View style={styles.composer}>
+          {emojiOpen ? (
+            <View style={styles.popoverRow}>
+              {CHAT_EMOJIS.map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  onPress={() => {
+                    setText((current) => current + emoji);
+                    setEmojiOpen(false);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Chèn ${emoji}`}
+                >
+                  <Text style={styles.reactionChip}>{emoji}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+          {mentionOpen ? (
+            <View style={styles.popoverColumn}>
+              {members
+                .filter((person) => person.id !== user.id)
+                .map((person) => (
+                  <Pressable
+                    key={person.id}
+                    onPress={() => insertMention(person)}
+                    style={styles.mentionRow}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Nhắc đến ${person.name}`}
+                  >
+                    <Avatar name={person.name} url={person.avatar_url} size={28} />
+                    <Text style={styles.taskTitle}>{person.name}</Text>
+                  </Pressable>
+                ))}
+            </View>
+          ) : null}
+          <View style={styles.composerTools}>
             <Pressable
               onPress={() => void pickImage()}
               style={styles.attach}
@@ -920,6 +1087,30 @@ function GroupScreen({
             >
               <Text style={styles.attachText}>{picking ? "…" : "Ảnh"}</Text>
             </Pressable>
+            <Pressable
+              onPress={() => {
+                setEmojiOpen((open) => !open);
+                setMentionOpen(false);
+              }}
+              style={styles.attach}
+              accessibilityRole="button"
+              accessibilityLabel="Chọn emoji"
+            >
+              <Text style={styles.attachText}>Emoji</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setMentionOpen((open) => !open);
+                setEmojiOpen(false);
+              }}
+              style={styles.attach}
+              accessibilityRole="button"
+              accessibilityLabel="Nhắc đến thành viên"
+            >
+              <Text style={styles.attachText}>@</Text>
+            </Pressable>
+          </View>
+          <View style={styles.composer}>
             <TextInput
               value={text}
               onChangeText={setText}
@@ -1989,6 +2180,44 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  composerTools: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingBottom: 8,
+  },
+  popoverRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+    paddingHorizontal: 14,
+    paddingBottom: 8,
+  },
+  popoverColumn: { gap: 2, paddingHorizontal: 14, paddingBottom: 8 },
+  mentionRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 6 },
+  reactionChip: { fontSize: 20, paddingHorizontal: 4 },
+  reactionRow: { flexDirection: "row", flexWrap: "wrap", gap: 2, marginTop: 6 },
+  olderButton: { alignSelf: "center", paddingVertical: 8 },
+  replyBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 8,
+  },
+  replyBarText: {
+    flex: 1,
+    color: C.muted,
+    fontSize: 12,
+  },
+  messageReplyQuote: {
+    borderLeftWidth: 2,
+    borderLeftColor: C.cyan,
+    paddingLeft: 8,
+    marginBottom: 6,
+  },
+  messageReplyName: { color: C.cyan, fontSize: 10, fontWeight: "800" },
+  messageReplyBody: { color: C.muted, fontSize: 12 },
   attachText: { color: C.muted, fontSize: 11, fontWeight: "700" },
   attachmentBar: {
     flexDirection: "row",
