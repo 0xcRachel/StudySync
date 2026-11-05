@@ -25,6 +25,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import * as ImagePicker from "expo-image-picker";
 import * as api from "./api";
+import { configureNotifications, notifyIncomingMessage } from "./notifications";
 import { clearSession, readSession, writeSession } from "./session";
 import { useLenis, useScreenMotion } from "./motion";
 import { useNativeToast } from "./Toast";
@@ -408,10 +409,11 @@ function GroupScreen({
   const [showTask, setShowTask] = useState(false);
   const [chatLoaded, setChatLoaded] = useState(false);
   const lastMessageId = useRef(0);
+  const notifiedMessageId = useRef(0);
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtime = useGroupRealtime({
     enabled: true,
-    trackMessages: tab === "chat" && chatLoaded,
+    trackMessages: chatLoaded,
     groupId: group.id,
     token,
     userId: user.id,
@@ -434,6 +436,32 @@ function GroupScreen({
   const realtimeStatus = realtime.status;
   const sendTyping = realtime.sendTyping;
   const sendRead = realtime.sendRead;
+  // Tin nhắn chỉ được push qua socket khi lastMessageId đã có mốc thật, nếu
+  // không lần kết nối đầu sẽ phát lại cả lịch sử như tin vừa tới.
+  useEffect(() => {
+    if (chatLoaded) return;
+    void api
+      .getMessages(group.id, token)
+      .then((next) => {
+        lastMessageId.current = next.reduce(
+          (latest, message) => Math.max(latest, message.id),
+          0,
+        );
+        notifiedMessageId.current = lastMessageId.current;
+        setChatLoaded(true);
+      })
+      .catch(() => undefined);
+  }, [chatLoaded, group.id, token]);
+  useEffect(() => {
+    configureNotifications();
+  }, []);
+  useEffect(() => {
+    const latest = messages[messages.length - 1];
+    if (!latest || latest.id <= notifiedMessageId.current) return;
+    notifiedMessageId.current = latest.id;
+    if (latest.sender_id === user.id || tab === "chat") return;
+    notifyIncomingMessage(latest.sender_name, group.name, latest.body);
+  }, [messages, tab, user.id, group.name]);
   const load = useCallback(async () => {
     try {
       if (tab === "tasks") {
