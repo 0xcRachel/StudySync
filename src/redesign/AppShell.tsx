@@ -343,7 +343,13 @@ function HomeScreen({
           <Button title="Tạo nhóm mới" onPress={onCreate} compact />
         </View>
       ) : (
-        groups.map((group, index) => (
+        groups.map((group, index) => {
+          const unread = Math.max(0, group.unread_count || 0);
+          const mentions = Math.max(0, group.mention_count || 0);
+          // Red = có người nhắc tên, grey = tin chưa đọc — cùng quy ước với
+          // sidebar web và Discord.
+          const badgeCount = mentions > 0 ? mentions : unread;
+          return (
           <Pressable
             key={group.id}
             onPress={() => onOpenGroup(group)}
@@ -363,7 +369,9 @@ function HomeScreen({
               </Text>
             </View>
             <View style={styles.flex}>
-              <Text style={styles.groupName}>{group.name}</Text>
+              <Text style={unread > 0 ? styles.groupNameUnread : styles.groupName}>
+                {group.name}
+              </Text>
               <Text style={styles.pageSubtitle}>
                 {group.task_count || 0} công việc · {group.completed_count || 0}{" "}
                 hoàn thành
@@ -379,9 +387,29 @@ function HomeScreen({
                 />
               </View>
             </View>
-            <Text style={styles.chevron}>›</Text>
+            {badgeCount > 0 ? (
+              <View
+                style={[
+                  styles.unreadBadge,
+                  mentions > 0 && styles.unreadBadgeMention,
+                ]}
+              >
+                <Text
+                  style={
+                    mentions > 0
+                      ? styles.unreadBadgeTextMention
+                      : styles.unreadBadgeText
+                  }
+                >
+                  {badgeCount > 99 ? "99+" : badgeCount}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.chevron}>›</Text>
+            )}
           </Pressable>
-        ))
+          );
+        })
       )}
       <Pressable onPress={onRefresh} style={styles.refresh}>
         <Text style={styles.pageSubtitle}>↻ Làm mới dữ liệu</Text>
@@ -1391,9 +1419,16 @@ type TabParamList = {
 
 function HomeTab() {
   const app = useApp();
+  const { refresh } = app;
   // Màn hình nằm trong tab lồng, còn "group" thuộc stack cha — phải xin
   // navigation của stack cha thì push mới có type đúng.
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  // Badge chưa đọc phải lớn lên khi tin tới lúc người dùng đang ở danh sách,
+  // chứ không phải chờ tới lần kéo-tải tiếp theo.
+  useEffect(() => {
+    const interval = setInterval(() => refresh(), 10_000);
+    return () => clearInterval(interval);
+  }, [refresh]);
   return (
     <HomeScreen
       user={app.user}
@@ -1713,6 +1748,9 @@ export function AppShell() {
       toast(e instanceof Error ? e.message : "Không tải được nhóm.", "error");
     }
   }, [session, toast]);
+  // Giữ tham chiếu ổn định để màn danh sách đặt được interval mà không phải
+  // đăng ký lại mỗi lần groups thay đổi (tức là mỗi lần chính nó tải xong).
+  const refreshGroups = useCallback(() => void refresh(), [refresh]);
   // Khôi phục phiên từ thiết bị. Token cũ có thể đã hết hạn, nên phải kiểm
   // với /me.php trước khi coi như đang đăng nhập — nếu không người dùng bị
   // nhốt ở màn hình mà mọi request đều báo lỗi.
@@ -1778,7 +1816,7 @@ export function AppShell() {
     token: session.token,
     user: session.user,
     groups,
-    refresh: () => void refresh(),
+    refresh: refreshGroups,
     openCreate: () => setShowCreate(true),
     signOut: () => void signOut(),
   };
@@ -2092,7 +2130,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   groupIconText: { color: C.cyan, fontSize: 16, fontWeight: "900" },
-  groupName: { color: C.ink, fontSize: 16, fontWeight: "800" },
+  groupName: { color: C.muted, fontSize: 16, fontWeight: "700" },
+  groupNameUnread: { color: C.ink, fontSize: 16, fontWeight: "800" },
+  unreadBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: C.panel2,
+  },
+  unreadBadgeMention: { backgroundColor: C.red },
+  unreadBadgeText: { color: C.ink, fontSize: 11, fontWeight: "800" },
+  unreadBadgeTextMention: { color: C.bg },
   groupHero: {
     flexDirection: "row",
     alignItems: "center",
