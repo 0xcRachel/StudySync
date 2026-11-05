@@ -1141,13 +1141,10 @@ textarea.field {
   font-variant-numeric: tabular-nums;
 }
 .notif-panel {
-  position: absolute;
-  top: calc(100% + 10px);
-  z-index: 60;
+  position: fixed;
+  z-index: 90;
   display: grid;
   gap: 2px;
-  width: min(344px, calc(100vw - 24px));
-  max-height: min(520px, 70vh);
   padding: 6px;
   border: 1px solid var(--line-2);
   border-radius: 15px;
@@ -1155,9 +1152,8 @@ textarea.field {
   box-shadow: 0 22px 54px rgba(21,23,26,.18), 0 2px 8px rgba(21,23,26,.06);
   overflow: hidden;
 }
-/* Sidebar chỉ rộng 232px nên panel phải mở sang phải, đè lên vùng nội dung. */
-.rail .notif-panel { left: 0; }
-.mhead .notif-panel { right: 0; }
+/* top/left/width/max-height do NotificationCenter tính và đặt inline: panel
+   render ở <body> nên không còn neo theo .rail hay .mhead nữa. */
 .notif-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 9px 9px; }
 .notif-panel-title { font-size: 13px; font-weight: 600; letter-spacing: -.01em; color: var(--ink); }
 .notif-markall { font-size: 11px; color: var(--pine); text-decoration: underline; text-underline-offset: 2px; }
