@@ -17,6 +17,10 @@ export type Group = {
   description?: string | null;
   task_count: number;
   completed_count: number;
+  /** Tin của người khác sau mốc đọc per-group — sidebar vẽ pill + badge từ số này. */
+  unread_count?: number;
+  /** Trong số đó, tin có nhắc tới mình — Discord badge đỏ, còn lại badge xám. */
+  mention_count?: number;
   created_at?: string;
 };
 

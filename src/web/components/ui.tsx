@@ -52,9 +52,32 @@ export type IconName =
   | 'image'
   | 'bell'
   | 'chevron'
-  | 'at';
+  | 'at'
+  | 'home'
+  | 'users'
+  | 'user';
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
+  home: (
+    <>
+      <path d="M3.4 9.2 10 4l6.6 5.2" />
+      <path d="M5.4 8.4V15a.9.9 0 0 0 .9.9h2.5v-3.5h2.4v3.5h2.5a.9.9 0 0 0 .9-.9V8.4" />
+    </>
+  ),
+  users: (
+    <>
+      <circle cx="8.4" cy="7.6" r="3.1" />
+      <path d="M3.4 15.9c.5-2.7 2.6-4.3 5-4.3s4.5 1.6 5 4.3" />
+      <path d="M13.5 4.9a3 3 0 0 1 0 5.5" />
+      <path d="M15.2 11.9c1.4.7 2.3 2 2.6 3.6" />
+    </>
+  ),
+  user: (
+    <>
+      <circle cx="10" cy="7.2" r="3.4" />
+      <path d="M4.2 16.2c.8-3.1 3-4.8 5.8-4.8s5 1.7 5.8 4.8" />
+    </>
+  ),
   at: (
     <>
       <circle cx="10" cy="10" r="3.3" />

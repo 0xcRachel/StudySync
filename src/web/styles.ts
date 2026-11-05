@@ -506,10 +506,10 @@ textarea.field {
 .rail-group {
   position: relative;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 10px 8px 18px;
   border-radius: 4px;
   color: var(--ink-2);
   font-size: 13.5px;
@@ -526,8 +526,41 @@ textarea.field {
   background: var(--pine);
   border-radius: 2px;
 }
+/* Chưa đọc = chữ đậm + pill mép trái, đúng cách Discord báo hiệu. */
+.rail-group.unread { color: var(--ink); }
+.rail-group.unread .name { font-weight: 600; }
+.rail-pill {
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  width: 4px;
+  height: 8px;
+  border-radius: 0 3px 3px 0;
+  background: var(--pine);
+  transform: translateY(-50%);
+  transition: width .16s ease, height .16s ease;
+}
+.rail-group:hover .rail-pill { width: 14px; height: 10px; }
 .rail-group .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-count { font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; flex: none; }
+.rail-badge {
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--sunk);
+  color: var(--ink-2);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.rail-group:hover .rail-badge { background: var(--surface); }
+/* Badge đỏ chỉ dành cho tin nhắc tên — như Discord, xám là unread thường. */
+.rail-badge.mention { background: var(--danger); color: #f6efe9; }
+.rail-badge.mention:hover { background: var(--danger); }
 .rail-add {
   display: block;
   margin: 7px 0 0;
@@ -540,17 +573,20 @@ textarea.field {
 .rail-nav { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 1px; flex: none; }
 .rail-item {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   padding: 9px 10px;
   border-radius: 4px;
   font-size: 13.5px;
   color: var(--ink-2);
   transition: background-color .16s ease, color .16s ease;
 }
+.rail-item > span { flex: 1; min-width: 0; }
+.rail-item .icon { color: var(--ink-3); transition: color .16s ease; }
 .rail-item:hover { background: var(--sunk); color: var(--ink); }
+.rail-item:hover .icon { color: var(--ink-2); }
 .rail-item.active { color: var(--ink); background: var(--surface); font-weight: 500; }
+.rail-item.active .icon { color: var(--pine); }
 .rail-foot { margin-top: auto; padding-top: 18px; border-top: 1px solid var(--line); }
 .rail-user { display: flex; align-items: center; gap: 10px; }
 .rail-user .avatar { width: 28px; height: 28px; }

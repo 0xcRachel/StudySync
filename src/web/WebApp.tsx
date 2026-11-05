@@ -460,6 +460,28 @@ function Workspace() {
     };
   }, [token]);
 
+  /**
+   * Pill chưa đọc trên sidebar phải lớn lên kể cả khi không mở nhóm đó.
+   * WebSocket chỉ báo notification (nhắc tên, kết bạn) nên tin nhắn thường
+   * phải đi đường polling; rời nhóm thì navigate đã nạp lại ngay vì tab chat
+   * vừa gửi read.
+   */
+  useEffect(() => {
+    if (!token) return undefined;
+    const onNotification = () => void loadGroups(true);
+    window.addEventListener('studysync:notification', onNotification);
+    return () => window.removeEventListener('studysync:notification', onNotification);
+  }, [token, loadGroups]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      void loadGroups(true);
+    }, 8000);
+    return () => window.clearInterval(interval);
+  }, [token, loadGroups]);
+
   const reloadGroups = () => {
     setGroupsLoading(true);
     setGroupsError(null);
@@ -514,7 +536,10 @@ function Workspace() {
     const hash = routeToHash(next);
     if (window.location.hash !== hash) window.history.pushState(null, '', hash);
     setRoute(next);
-  }, []);
+    // Rời một nhóm là tab chat vừa gửi read cho nhóm đó, nên badge phải tụt
+    // ngay thay vì chờ tới lần polling kế tiếp.
+    void loadGroups(true);
+  }, [loadGroups]);
 
   const handleAuthed = useCallback(
     (next: Session) => {
