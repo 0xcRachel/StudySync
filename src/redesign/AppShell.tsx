@@ -23,6 +23,7 @@ import type {
 } from "@react-navigation/native-stack";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import * as ImagePicker from "expo-image-picker";
 import * as api from "./api";
 import { clearSession, readSession, writeSession } from "./session";
 import { useLenis, useScreenMotion } from "./motion";
@@ -401,6 +402,9 @@ function GroupScreen({
   const [newTask, setNewTask] = useState("");
   const [taskAssignees, setTaskAssignees] = useState<number[]>([]);
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
+  const [attachment, setAttachment] = useState<api.PickedImage | null>(null);
+  const [viewerUrl, setViewerUrl] = useState("");
+  const [picking, setPicking] = useState(false);
   const [showTask, setShowTask] = useState(false);
   const [chatLoaded, setChatLoaded] = useState(false);
   const lastMessageId = useRef(0);
@@ -545,17 +549,40 @@ function GroupScreen({
       );
     }
   };
+  const pickImage = async () => {
+    setPicking(true);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.85,
+        allowsMultipleSelection: false,
+      });
+      if (result.canceled) return;
+      const asset = result.assets[0];
+      if (!asset) return;
+      setAttachment({
+        uri: asset.uri,
+        name: asset.fileName ?? `anh-${Date.now()}.jpg`,
+        mimeType: asset.mimeType ?? "image/jpeg",
+      });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Không mở được thư viện ảnh.", "error");
+    } finally {
+      setPicking(false);
+    }
+  };
   const send = async () => {
-    if (!text.trim()) return;
+    const body = text.trim();
+    if (!body && !attachment) return;
     try {
       if (editingMessageId) {
-        await api.editMessage(editingMessageId, text.trim(), token);
+        await api.editMessage(editingMessageId, body, token);
         setMessages((current) =>
           current.map((item) =>
             item.id === editingMessageId
               ? {
                   ...item,
-                  body: text.trim(),
+                  body,
                   edited_at: new Date().toISOString(),
                 }
               : item,
@@ -563,13 +590,14 @@ function GroupScreen({
         );
         setEditingMessageId(null);
       } else {
-        const created = await api.sendMessage(group.id, text.trim(), token);
+        const created = await api.sendMessage(group.id, body, token, null, [], attachment);
         lastMessageId.current = Math.max(lastMessageId.current, created.id);
         setMessages((current) =>
           current.some((item) => item.id === created.id)
             ? current
             : [...current, created].slice(-100),
         );
+        setAttachment(null);
       }
       setText("");
     } catch (e) {
@@ -761,7 +789,25 @@ function GroupScreen({
                       : message.sender_name}
                     {message.edited_at ? " · đã sửa" : ""}
                   </Text>
-                  <Text style={styles.messageBody}>{message.body}</Text>
+                  {message.body ? (
+                    <Text style={styles.messageBody}>{message.body}</Text>
+                  ) : null}
+                  {message.image_url ? (
+                    <Pressable
+                      onPress={() => setViewerUrl(api.messageImageUrl(message.image_url!))}
+                      accessibilityRole="button"
+                      accessibilityLabel="Mở ảnh"
+                    >
+                      <Image
+                        source={{
+                          uri: api.messageImageUrl(message.image_url),
+                          headers: api.imageAuthHeader(token),
+                        }}
+                        style={styles.messageImage}
+                        resizeMode="cover"
+                      />
+                    </Pressable>
+                  ) : null}
                   {message.reactions?.length ? (
                     <Text style={styles.messageReaction}>
                       {message.reactions
@@ -795,7 +841,25 @@ function GroupScreen({
               ))
             )}
           </ScrollView>
+          {attachment ? (
+            <View style={styles.attachmentBar}>
+              <Image source={{ uri: attachment.uri }} style={styles.attachmentThumb} />
+              <Text style={styles.pageSubtitle}>1 ảnh đính kèm</Text>
+              <Pressable onPress={() => setAttachment(null)}>
+                <Text style={styles.attachmentRemove}>Bỏ ảnh</Text>
+              </Pressable>
+            </View>
+          ) : null}
           <View style={styles.composer}>
+            <Pressable
+              onPress={() => void pickImage()}
+              style={styles.attach}
+              disabled={picking}
+              accessibilityRole="button"
+              accessibilityLabel="Chọn ảnh"
+            >
+              <Text style={styles.attachText}>{picking ? "…" : "Ảnh"}</Text>
+            </Pressable>
             <TextInput
               value={text}
               onChangeText={setText}
@@ -811,6 +875,19 @@ function GroupScreen({
               </Text>
             </Pressable>
           </View>
+          <Modal
+            visible={viewerUrl !== ""}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setViewerUrl("")}
+          >
+            <View style={styles.viewer}>
+              <Image source={{ uri: viewerUrl, headers: api.imageAuthHeader(token) }} style={styles.viewerImage} resizeMode="contain" />
+              <Pressable onPress={() => setViewerUrl("")}>
+                <Text style={styles.viewerClose}>Đóng</Text>
+              </Pressable>
+            </View>
+          </Modal>
         </KeyboardAvoidingView>
       )}
       {tab === "members" && (
@@ -1782,6 +1859,41 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   sendText: { color: C.white, fontSize: 22, fontWeight: "800" },
+  attach: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attachText: { color: C.muted, fontSize: 11, fontWeight: "700" },
+  attachmentBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+  },
+  attachmentThumb: { width: 44, height: 44, borderRadius: 10, backgroundColor: C.panel2 },
+  attachmentRemove: { color: C.red, fontSize: 11, fontWeight: "700" },
+  messageImage: {
+    width: 220,
+    height: 158,
+    borderRadius: 12,
+    backgroundColor: C.panel2,
+    marginTop: 8,
+  },
+  viewer: {
+    flex: 1,
+    backgroundColor: "rgba(4,7,16,0.94)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 18,
+  },
+  viewerImage: { width: "100%", height: "76%", borderRadius: 14, backgroundColor: C.panel },
+  viewerClose: { marginTop: 16, color: C.ink, fontSize: 13, fontWeight: "700" },
   member: {
     flexDirection: "row",
     alignItems: "center",

@@ -3,10 +3,13 @@ import { API_BASE_URL } from '../config/api';
 export type User = { id: number; name: string; email: string; avatar_url?: string | null; bio?: string | null; last_seen_at?: string | null };
 export type Group = { id: number; name: string; description?: string | null; task_count?: number; completed_count?: number };
 export type Task = { id: number; group_id: number; title: string; status: 'todo' | 'doing' | 'done'; priority?: 'low' | 'medium' | 'high'; due_at?: string | null; assignees?: Pick<User, 'id' | 'name' | 'avatar_url'>[] };
-export type Message = { id: number; group_id: number; sender_id: number; sender_name: string; body: string; created_at?: string; edited_at?: string | null; reactions?: { emoji: string; count: number; reacted: boolean }[] };
+export type Message = { id: number; group_id: number; sender_id: number; sender_name: string; body: string; created_at?: string; edited_at?: string | null; image_url?: string | null; reactions?: { emoji: string; count: number; reacted: boolean }[] };
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers ?? {}) } });
+  // FormData phải để RN tự sinh Content-Type kèm boundary; ghim
+  // 'application/json' vào là server không parse được và ảnh bị bỏ.
+  const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers: { Accept: 'application/json', ...(isForm ? {} : { 'Content-Type': 'application/json' }), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers ?? {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || body.success === false) throw new Error(body.message || `HTTP ${response.status}`);
   return body as T;
@@ -36,9 +39,31 @@ export async function getMessages(groupId: number, token: string, beforeId?: num
   if (beforeId) params.set('before_id', String(beforeId));
   return (await request<any>(`/messages.php?${params.toString()}`, {}, token)).data as Message[];
 }
-export async function sendMessage(groupId: number, body: string, token: string, replyToId?: number | null, mentionIds: number[] = []) {
-  return (await post('/messages.php', { group_id: groupId, body, reply_to_id: replyToId ?? null, mention_ids: mentionIds }, token)).data as Message;
+export type PickedImage = { uri: string; name: string; mimeType: string };
+
+export async function sendMessage(
+  groupId: number,
+  body: string,
+  token: string,
+  replyToId?: number | null,
+  mentionIds: number[] = [],
+  image?: PickedImage | null,
+) {
+  if (!image) {
+    return (await post('/messages.php', { group_id: groupId, body, reply_to_id: replyToId ?? null, mention_ids: mentionIds }, token)).data as Message;
+  }
+  const form = new FormData();
+  form.append('group_id', String(groupId));
+  form.append('body', body);
+  if (replyToId) form.append('reply_to_id', String(replyToId));
+  form.append('mention_ids', JSON.stringify(mentionIds));
+  form.append('image', { uri: image.uri, name: image.name, type: image.mimeType } as unknown as Blob);
+  return (await request<any>('/messages.php', { method: 'POST', body: form }, token)).data as Message;
 }
+
+/** Endpoint ảnh yêu cầu Bearer token, và <Image> của RN gửi được header. */
+export const messageImageUrl = (path: string) => `${API_BASE_URL}${path}`;
+export const imageAuthHeader = (token: string) => ({ Authorization: `Bearer ${token}` });
 export async function reactMessage(messageId: number, emoji: string, token: string) { return (await post('/message_reactions.php', { message_id: messageId, emoji }, token)).data as { message_id: number; reactions: NonNullable<Message['reactions']> }; }
 export async function editMessage(messageId: number, body: string, token: string) { return post('/message_actions.php', { message_id: messageId, action: 'edit', body }, token); }
 export async function deleteMessage(messageId: number, token: string) { return post('/message_actions.php', { message_id: messageId, action: 'delete' }, token); }
