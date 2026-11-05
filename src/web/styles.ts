@@ -561,6 +561,9 @@ textarea.field {
 .main { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
 .page {
   max-width: 1080px;
+  /* Không tự căn giữa thì ở màn 1918px toàn bộ cột nội dung dính sát sidebar
+     và để trống ~640px phía phải. */
+  margin-inline: auto;
   padding: clamp(34px, 4.4vw, 68px) var(--pad) 140px;
   flex: 1;
   min-height: 0;
