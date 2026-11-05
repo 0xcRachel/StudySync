@@ -7,7 +7,6 @@ run_api(static function (): void {
     $id = parse_positive_int($data['id'] ?? null, 'Mã công việc');
     $groupId = parse_positive_int($data['group_id'] ?? null, 'Mã nhóm');
     $title = parse_title($data['title'] ?? null);
-    $status = parse_status($data['status'] ?? 'todo');
     $pdo = db();
     $me = require_auth();
     require_group_member($pdo, $groupId, $me['id']);
@@ -17,6 +16,11 @@ run_api(static function (): void {
     if ($existingTask === null || $existingTask['group_id'] !== $groupId) {
         throw new ApiException(404, 'Không tìm thấy công việc trong nhóm này.');
     }
+    // Mặc định là trạng thái HIỆN CÓ, không phải 'todo': đổi tên một việc đang
+    // làm mà không gửi status thì không được phép kéo nó về "Cần làm".
+    $status = array_key_exists('status', $data) && $data['status'] !== null
+        ? parse_status($data['status'])
+        : (string) $existingTask['status'];
     $statement = $pdo->prepare('UPDATE `tasks` SET title = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND group_id = ?');
     $statement->execute([$title, $status, $id, $groupId]);
     send_json(['success' => true, 'data' => find_task($pdo, $id)]);

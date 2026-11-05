@@ -207,6 +207,37 @@ export const createTask = (groupId: number, title: string, token: string, assign
 export const assignTask = (taskId: number, userIds: number[], token: string) =>
   post<Task>('/assign_task.php', { task_id: taskId, user_ids: userIds }, token);
 
+export const deleteTask = (taskId: number, token: string) =>
+  // Endpoint đọc `id`, không phải `task_id`.
+  post<unknown>('/delete_task.php', { id: taskId }, token);
+
+export const renameTask = (task: Task, title: string, token: string) =>
+  request<Task>('/update_task.php', {
+    method: 'PATCH',
+    body: { id: task.id, group_id: task.group_id, title },
+    token,
+  });
+
+export const deleteGroup = (groupId: number, token: string) =>
+  post<unknown>('/delete_group.php', { id: groupId }, token);
+
+export type TaskComment = {
+  id: number;
+  task_id: number;
+  user_id: number;
+  user_name: string;
+  avatar_url?: string | null;
+  body: string;
+  created_at?: string;
+};
+
+/** Endpoint lấy `task_id` từ query string ở cả GET lẫn POST. */
+export const getTaskComments = (taskId: number, token: string, signal?: AbortSignal) =>
+  request<TaskComment[]>(`/task_comments.php?task_id=${taskId}`, { token, signal });
+
+export const addTaskComment = (taskId: number, body: string, token: string) =>
+  post<TaskComment>(`/task_comments.php?task_id=${taskId}`, { body }, token);
+
 export const updateTaskStatus = (task: Task, status: TaskStatus, token: string) =>
   post<Task>('/update_task_status.php', { id: task.id, group_id: task.group_id, status }, token);
 

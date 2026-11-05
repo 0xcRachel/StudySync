@@ -59,17 +59,25 @@ function dayKey(value?: string | null): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? '');
   if (match) return `${match[1]}-${match[2]}-${match[3]}`;
   const date = value ? new Date(value) : null;
-  return date && !Number.isNaN(date.getTime())
-    ? `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`
-    : '';
+  return date && !Number.isNaN(date.getTime()) ? localDayKey(date) : '';
+}
+
+/**
+ * dayKey so với chuỗi "YYYY-MM-DD HH:mm:ss" mà backend trả (giờ máy chủ = giờ
+ * máy người dùng). toISOString().slice(0,10) lại cắt theo UTC, nên ở UTC+7 nó
+ * lệch một ngày và "Hôm qua" không bao giờ khớp.
+ */
+function localDayKey(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 function dayLabel(value?: string | null): string {
   const key = dayKey(value);
   if (!key) return '';
-  const today = dayKey(localStamp());
+  const today = localDayKey(new Date());
   if (key === today) return 'Hôm nay';
-  const yesterday = dayKey(new Date(Date.now() - 86_400_000).toISOString().slice(0, 10));
+  const yesterday = localDayKey(new Date(Date.now() - 86_400_000));
   if (key === yesterday) return 'Hôm qua';
   const date = new Date(`${key.slice(0, 10)}T00:00:00`);
   if (Number.isNaN(date.getTime())) return '';
@@ -147,6 +155,8 @@ export function GroupScreen({
   const [searching, setSearching] = useState(false);
   const [inviteCandidates, setInviteCandidates] = useState<InviteCandidate[]>([]);
   const [inviteLoading, setInviteLoading] = useState(false);
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(false);
+  const [deletingGroup, setDeletingGroup] = useState(false);
 
   const tabsRef = useRef<HTMLDivElement | null>(null);
   const taskInputRef = useRef<HTMLInputElement | null>(null);
@@ -459,6 +469,45 @@ export function GroupScreen({
     } catch (caught) {
       toast(caught instanceof Error ? caught.message : 'Không cập nhật được người phụ trách.', 'bad');
       throw caught;
+    }
+  };
+
+  const renameTask = async (task: Task, title: string) => {
+    try {
+      const updated = await api.renameTask(task, title, token);
+      setTasks((current) => current.map((item) => (item.id === task.id ? updated : item)));
+      onTasksChanged?.();
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : 'Không đổi được tên việc.', 'bad');
+      throw caught;
+    }
+  };
+
+  const removeTask = async (task: Task) => {
+    // Giữ bản chụp để khôi phục nếu xoá thất bại, giống chiều cycle().
+    const snapshot = tasks;
+    setTasks((current) => current.filter((item) => item.id !== task.id));
+    try {
+      await api.deleteTask(task.id, token);
+      toast('Đã xoá công việc.');
+      onTasksChanged?.();
+    } catch (caught) {
+      setTasks(snapshot);
+      toast(caught instanceof Error ? caught.message : 'Không xoá được công việc.', 'bad');
+    }
+  };
+
+  const removeGroup = async () => {
+    if (!confirmDeleteGroup) { setConfirmDeleteGroup(true); window.setTimeout(() => setConfirmDeleteGroup(false), 5000); return; }
+    setDeletingGroup(true);
+    try {
+      await api.deleteGroup(groupId, token);
+      toast('Đã xoá nhóm.');
+      onBack();
+    } catch (caught) {
+      setDeletingGroup(false);
+      setConfirmDeleteGroup(false);
+      toast(caught instanceof Error ? caught.message : 'Không xoá được nhóm.', 'bad');
     }
   };
 
@@ -791,7 +840,18 @@ export function GroupScreen({
             />
           ) : (
             visible.map((task) => (
-              <TaskRow key={task.id} task={task} busy={busyId === task.id} onCycle={cycle} members={members} onAssign={assignTask} />
+              <TaskRow
+                key={task.id}
+                task={task}
+                busy={busyId === task.id}
+                onCycle={cycle}
+                members={members}
+                onAssign={assignTask}
+                token={token}
+                userId={user.id}
+                onRename={renameTask}
+                onDelete={removeTask}
+              />
             ))
           )}
 
@@ -968,6 +1028,22 @@ export function GroupScreen({
                   </button>
                 </div>
               ))}
+
+              <div className="danger-zone">
+                <div>
+                  <div className="danger-title">Xoá nhóm</div>
+                  <p className="danger-hint">Công việc, tin nhắn và bình luận của nhóm sẽ mất theo. Không hoàn tác được.</p>
+                </div>
+                <button
+                  type="button"
+                  className={confirmDeleteGroup ? 'btn btn-sm btn-danger confirm' : 'btn btn-sm btn-danger-quiet'}
+                  disabled={deletingGroup}
+                  onClick={() => void removeGroup()}
+                  aria-label={confirmDeleteGroup ? 'Bấm lần nữa để xoá nhóm' : 'Xoá nhóm'}
+                >
+                  {deletingGroup ? 'Đang xoá…' : confirmDeleteGroup ? 'Xoá thật?' : 'Xoá nhóm'}
+                </button>
+              </div>
             </>
           ) : null}
         </section>

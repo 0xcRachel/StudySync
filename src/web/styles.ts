@@ -699,6 +699,7 @@ textarea.field {
 .groupform-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 
 .task {
+  position: relative;
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
   gap: 12px;
@@ -755,6 +756,40 @@ textarea.field {
 .task-assign-menu label { display: flex; align-items: center; gap: 8px; padding: 5px; border-radius: 7px; color: var(--ink-2); font-size: 12px; cursor: pointer; }
 .task-assign-menu label:hover { background: var(--sunk); }
 .task-assign-menu .btn { margin-top: 4px; }
+
+/* Nút đổi tên / xoá việc: hiện khi rê chuột, giống hàng nút tin nhắn chat. */
+.task-tools { position: absolute; top: 10px; right: 12px; display: flex; gap: 4px; opacity: 0; transition: opacity .16s ease; }
+.task:hover .task-tools, .task:focus-within .task-tools { opacity: 1; }
+.task-tool { display: grid; place-items: center; min-width: 26px; height: 24px; padding: 0 6px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--ink-3); font-size: 10.5px; }
+.task-tool:hover { color: var(--pine); border-color: var(--line); background: rgba(255,255,255,.8); }
+.task-tool.danger:hover, .task-tool.danger.confirm { color: var(--danger); border-color: rgba(142,50,35,.4); }
+@media (hover: none), (pointer: coarse) { .task-tools { opacity: 1; position: static; justify-content: flex-start; margin-top: 8px; } }
+.task-rename { margin-top: 1px; }
+.task-rename input { width: 100%; max-width: 520px; padding: 5px 9px; border: 1px solid var(--pine); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 14.5px; outline: 0; }
+
+.task-comments { margin-top: 8px; }
+.task-comments summary { color: var(--ink-3); font-size: 11px; cursor: pointer; list-style: none; }
+.task-comments summary:hover { color: var(--pine); }
+.task-comments summary::-webkit-details-marker { display: none; }
+.task-comment-list { display: grid; gap: 8px; margin-top: 9px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.5); }
+.task-comment-empty { margin: 0; color: var(--ink-3); font-size: 11.5px; }
+.task-comment { display: grid; gap: 2px; }
+.task-comment-head { display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--ink-3); }
+.task-comment-head strong { color: var(--ink-2); font-weight: 600; }
+.task-comment.me .task-comment-head strong { color: var(--pine); }
+.task-comment-body { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-comment-form { display: flex; gap: 8px; margin-top: 2px; }
+.task-comment-form input { flex: 1; min-width: 0; padding: 8px 11px; border: 1px solid var(--line-2); border-radius: 9px; background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; outline: 0; }
+.task-comment-form input:focus { border-color: #8aa697; }
+
+/* Chủ nhóm chỉ xoá được cả nhóm ở một chỗ duy nhất, và nút phải "tắt" cho tới
+   khi được bấm lần hai — đây là thao tác không hoàn tác. */
+.danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 18px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 13px; }
+.danger-title { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.danger-hint { margin: 3px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--ink-3); }
+.btn-danger-quiet { border: 1px solid var(--line-2); background: transparent; color: var(--ink-3); white-space: nowrap; }
+.btn-danger-quiet:hover { border-color: rgba(142,50,35,.45); color: var(--danger); background: rgba(142,50,35,.05); }
+.btn-danger { border: 1px solid var(--danger); background: var(--danger); color: #f6efe9; white-space: nowrap; }
 
 /* ---------- Chat ---------- */
 /* Khung chat chiếm hết chiều cao còn lại: danh sách tin là vùng cuộn riêng,
