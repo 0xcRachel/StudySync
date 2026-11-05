@@ -832,6 +832,11 @@ textarea.field {
 .btn-danger-quiet:hover { border-color: rgba(142,50,35,.45); color: var(--danger); background: rgba(142,50,35,.05); }
 .btn-danger { border: 1px solid var(--danger); background: var(--danger); color: #f6efe9; white-space: nowrap; }
 
+/* Container của ba panel màn nhóm. Mobile: một cột dọc, chuỗi flex:1 +
+   min-height:0 đi thẳng từ .page xuống .chat như trước. Desktop: grid hai
+   cột, thành viên sang cột phải thường trực (xem useWideLayout). */
+.group-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
 /* ---------- Chat ---------- */
 /* Khung chat chiếm hết chiều cao còn lại: danh sách tin là vùng cuộn riêng,
    ô soạn thảo nằm chết ở đáy thay vì trôi theo trang. */
@@ -1285,6 +1290,34 @@ textarea.field {
 @media (max-width: 1120px) {
   .hero { grid-template-columns: minmax(0, 1fr) minmax(0, .95fr); gap: 48px; }
   .grow { grid-template-columns: minmax(0, 1fr) 120px 56px; gap: 16px; }
+}
+
+/* Desktop thật: cột nội dung + cột thành viên thường trực, như Discord/Slack.
+   Ngưỡng này phải khớp useWideLayout() trong screens/Group.tsx. */
+@media (min-width: 1280px) {
+  .page { max-width: 1500px; }
+  .group-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 28px;
+    align-items: stretch;
+  }
+  #panel-tasks, #panel-chat { grid-column: 1; grid-row: 1; min-width: 0; }
+  #panel-members {
+    grid-column: 2;
+    grid-row: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-left: 24px;
+    border-left: 1px solid var(--line);
+    scrollbar-width: thin;
+  }
+  /* Tin nhắn dùng hết bề rộng mới có: bong bóng 660px là con số của màn 1080px. */
+  .msg-content { max-width: min(920px, 92%); }
+  .chat-image-link { max-width: min(560px, 100%); }
+  .member { padding: 10px 0; }
+  .member-sub { font-size: 11px; }
 }
 
 @media (max-width: 980px) {

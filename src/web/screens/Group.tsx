@@ -110,6 +110,12 @@ function ChatImage({ url, token, onLoaded }: { url: string; token: string; onLoa
   );
 }
 
+/**
+ * Ngưỡng desktop: từ 1280px danh sách thành viên rời tab để thành cột phải
+ * thường trực kiểu Discord/Slack. Phải khớp với @media trong styles.ts.
+ */
+const WIDE_QUERY = '(min-width: 1280px)';
+
 export function GroupScreen({
   group,
   groupId,
@@ -126,6 +132,7 @@ export function GroupScreen({
   onTasksChanged?: () => void;
 }) {
   const toast = useToast();
+  const [wide, setWide] = useState(() => window.matchMedia(WIDE_QUERY).matches);
   const [tab, setTab] = useState<Tab>('tasks');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -205,11 +212,13 @@ export function GroupScreen({
           }
         } else {
           const data = await api.getMembers(groupId, token, controller.signal);
-          if (active) {
-            setMembers(data);
-            setInviteLoading(true);
-            void api.getInviteCandidates(groupId, token, controller.signal).then((candidates) => { if (active) setInviteCandidates(candidates); }).catch(() => undefined).finally(() => { if (active) setInviteLoading(false); });
-          }
+          if (active) setMembers(data);
+        }
+        // Ở desktop cột thành viên hiển thị cả lời mời, nên danh sách bạn bè
+        // phải tải dù tab không bao giờ là "members".
+        if (active && (tab === 'members' || wide)) {
+          setInviteLoading(true);
+          void api.getInviteCandidates(groupId, token, controller.signal).then((candidates) => { if (active) setInviteCandidates(candidates); }).catch(() => undefined).finally(() => { if (active) setInviteLoading(false); });
         }
       } catch (caught) {
         if (!active || controller.signal.aborted) return;
@@ -224,7 +233,7 @@ export function GroupScreen({
       active = false;
       controller.abort();
     };
-  }, [groupId, token, tab, reloadKey]);
+  }, [groupId, token, tab, wide, reloadKey]);
 
   const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : 0;
 
@@ -376,6 +385,21 @@ export function GroupScreen({
     },
     [tab],
   );
+
+  /**
+   * Đổi khổ màn hình là đổi cả cấu trúc. Đang ở tab Thành viên mà phóng to thì
+   * tab đó biến mất (thành viên đã sang cột phải), để lại cột nội dung trống
+   * rỗng — nên phải đưa về Thảo luận.
+   */
+  useEffect(() => {
+    const query = window.matchMedia(WIDE_QUERY);
+    const onChange = (event: MediaQueryListEvent) => {
+      setWide(event.matches);
+      if (event.matches && tab === 'members') selectTab('chat');
+    };
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, [tab, selectTab]);
 
   const retry = () => {
     setLoading(true);
@@ -714,7 +738,9 @@ export function GroupScreen({
   const onTabKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
     event.preventDefault();
-    const order: Tab[] = ['tasks', 'chat', 'members'];
+    // Ở desktop tab Thành viên không tồn tại — điều hướng phải vòng quanh
+    // đúng hai tab thật, nếu không phím mũi tên dừng ở một tab vô hình.
+    const order: Tab[] = wide ? ['tasks', 'chat'] : ['tasks', 'chat', 'members'];
     const index = order.indexOf(tab);
     const next = event.key === 'ArrowRight' ? (index + 1) % order.length : (index + order.length - 1) % order.length;
     selectTab(order[next]);
@@ -798,18 +824,20 @@ export function GroupScreen({
         >
           Thảo luận
         </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-members"
-          aria-selected={tab === 'members'}
-          aria-controls="panel-members"
-          className="tab"
-          onClick={() => selectTab('members')}
-        >
-          Thành viên
-          {members.length > 0 ? <span className="tab-count">{members.length}</span> : null}
-        </button>
+        {!wide ? (
+          <button
+            type="button"
+            role="tab"
+            id="tab-members"
+            aria-selected={tab === 'members'}
+            aria-controls="panel-members"
+            className="tab"
+            onClick={() => selectTab('members')}
+          >
+            Thành viên
+            {members.length > 0 ? <span className="tab-count">{members.length}</span> : null}
+          </button>
+        ) : null}
         <span className="tab-ink" aria-hidden="true" />
       </div>
 
@@ -819,6 +847,9 @@ export function GroupScreen({
         </div>
       ) : null}
 
+      {/* Một container duy nhất để CSS đổi giữa "một cột dọc" (mobile) và
+          "nội dung + cột thành viên" (desktop) mà không nhân đôi markup. */}
+      <div className="group-shell">
       {tab === 'tasks' ? (
         <section id="panel-tasks" role="tabpanel" aria-labelledby="tab-tasks">
           <div className="filters">
@@ -1013,8 +1044,14 @@ export function GroupScreen({
         </section>
       ) : null}
 
-      {tab === 'members' ? (
-        <section id="panel-members" role="tabpanel" aria-labelledby="tab-members">
+      {(wide || tab === 'members') ? (
+        <section
+          id="panel-members"
+          className={wide ? 'group-side' : undefined}
+          role={wide ? 'complementary' : 'tabpanel'}
+          aria-label={wide ? 'Thành viên nhóm' : undefined}
+          aria-labelledby={wide ? undefined : 'tab-members'}
+        >
           {loading ? (
             <SkeletonRows rows={3} />
           ) : error ? null : members.length === 0 ? (
@@ -1100,6 +1137,7 @@ export function GroupScreen({
           ) : null}
         </section>
       ) : null}
+      </div>
     </>
   );
 }
