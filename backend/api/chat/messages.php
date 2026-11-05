@@ -129,10 +129,16 @@ run_api(static function (): void {
         $parent = $parentQuery->fetch();
         if ($parent !== false) $reply = ['id' => (int) $parent['id'], 'body' => (string) $parent['body'], 'sender_name' => (string) $parent['sender_name'], 'avatar_url' => $parent['avatar_url'], 'has_image' => $parent['image_name'] !== null];
     }
+    // created_at phải đọc lại từ cột: hàng GET trả giờ theo múi của MySQL (SYSTEM,
+    // ở đây là +07) trong khi date() của PHP chạy múi UTC, nên tin vừa gửi hiện
+    // sớm 7 giờ cho tới lần poll kế tiếp thay thế bằng dữ liệu GET.
+    $stamp = $pdo->prepare('SELECT created_at FROM messages WHERE id = ?');
+    $stamp->execute([$id]);
+    $createdAt = (string) $stamp->fetchColumn();
     send_json(['success' => true, 'data' => [
         'id' => $id, 'group_id' => $groupId, 'sender_id' => $me['id'], 'sender_name' => $me['name'], 'avatar_url' => $me['avatar_url'],
         'body' => $storedBody, 'reply_to_id' => $replyToId, 'reply_to' => $reply,
         'image_url' => $imageName === null ? null : '/message_image.php?id=' . $id,
-        'created_at' => date('Y-m-d H:i:s'),
+        'created_at' => $createdAt,
     ]], 201);
 });
