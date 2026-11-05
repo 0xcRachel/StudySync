@@ -1034,6 +1034,28 @@ textarea.field {
 .member-role { font-size: 11.5px; color: var(--ink-3); }
 .member-name { font-size: 14.5px; letter-spacing: -.01em; }
 .member-sub { margin-top: 2px; font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
+
+/* Cột thành viên trong màn nhóm có layout riêng, lấy theo member list Discord:
+   đặc tên theo vai trò, dot presence, người ngoại tuyến nhạt hơn. .member gốc
+   ở trên vẫn giữ cho trang Bạn bè (3 cột, nhãn vai trò bên phải). */
+#panel-members .member { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 0; border-radius: 6px; transition: background-color .14s ease; }
+#panel-members .member:hover { background: var(--sunk); }
+#panel-members .member.offline { opacity: .55; }
+.member-avatar { position: relative; flex: none; }
+.presence { position: absolute; right: -2px; bottom: -2px; width: 12px; height: 12px; border-radius: 50%; background: var(--line-2); border: 2px solid var(--paper); box-sizing: border-box; }
+.presence.online { background: #3b9b73; }
+.member-text { display: grid; min-width: 0; }
+#panel-members .member-name { font-size: 13.5px; font-weight: 550; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#panel-members .member.offline .member-name { font-weight: 400; }
+#panel-members .member.role-owner .member-name { color: var(--pine); font-weight: 600; }
+#panel-members .member.role-admin .member-name { color: var(--ink); font-weight: 600; }
+#panel-members .member-sub { margin-top: 1px; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-group { margin-bottom: 8px; }
+.member-section { display: flex; align-items: center; gap: 6px; margin: 14px 8px 5px; font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+.member-section-count { letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.member-search { width: 100%; margin: 10px 0 6px; padding: 7px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; outline: 0; }
+.member-search:focus { border-color: #8aa697; }
+.member-none { margin: 10px 8px; color: var(--ink-3); font-size: 12px; }
 .friend-invite-list { display: grid; gap: 7px; margin: 12px 0 18px; }
 .friend-invite { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px 11px; border: 1px solid var(--line); border-radius: 11px; background: rgba(255,255,255,.32); }
 .friend-invite > span { display: grid; min-width: 0; font-size: 13px; }

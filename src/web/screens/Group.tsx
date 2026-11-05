@@ -163,6 +163,7 @@ export function GroupScreen({
   const [olderLoading, setOlderLoading] = useState(false);
   const [hasOlder, setHasOlder] = useState(false);
   const [chatQuery, setChatQuery] = useState('');
+  const [memberQuery, setMemberQuery] = useState('');
   const [mentionIndex, setMentionIndex] = useState(0);
   // null = chưa ẩn; rỗng '' sẽ đụng đúng query của dấu "@" trần nên không
   // dùng làm giá trị mặc định được.
@@ -793,6 +794,22 @@ export function GroupScreen({
     .filter(([readerId, value]) => Number(readerId) !== user.id && value.messageId >= latestOwnMessageId)
     .map(([, value]) => value.name);
 
+  const isPresent = (member: Member) => onlineUserIds.includes(member.id) || isOnline(member.last_seen_at);
+  const memberNeedle = memberQuery.trim().toLocaleLowerCase();
+  // Nhóm theo vai trò trước, trong vai trò xếp người đang hoạt động lên trước —
+  // Discord làm vậy, và vai trò đọc được từ màu tên nên khỏi cần cột nhãn.
+  const memberGroups = (['owner', 'admin', 'member'] as const)
+    .map((role) => ({
+      role,
+      people: members
+        .filter((member) => (member.role ?? 'member') === role)
+        .filter((member) => memberNeedle === ''
+          || member.name.toLocaleLowerCase().includes(memberNeedle)
+          || (member.username ?? '').toLocaleLowerCase().includes(memberNeedle))
+        .sort((a, b) => Number(isPresent(b)) - Number(isPresent(a)) || a.name.localeCompare(b.name)),
+    }))
+    .filter((group) => group.people.length > 0);
+
   const channels = [
     { key: 'tasks' as const, label: 'công việc', count: tasks.length },
     { key: 'chat' as const, label: 'thảo-luận', count: 0 },
@@ -1144,20 +1161,49 @@ export function GroupScreen({
           ) : error ? null : members.length === 0 ? (
             <EmptyState title="Chưa tải được thành viên." />
           ) : (
-            <div style={{ marginTop: 6 }}>
-              {members.map((member) => (
-                <div className="member" key={member.id}>
-                  <Avatar name={member.name} url={member.avatar_url} size={34} />
-                  <div>
-                    <div className="member-name">{member.name}</div>
-                    <div className="member-sub">
-                      {onlineUserIds.includes(member.id) || isOnline(member.last_seen_at) ? 'Đang hoạt động' : member.email}
-                    </div>
-                  </div>
-                  <span className="member-role">{ROLE_LABEL[member.role] ?? member.role}</span>
-                </div>
+            <>
+              {members.length > 4 ? (
+                <input
+                  className="member-search"
+                  value={memberQuery}
+                  onChange={(event) => setMemberQuery(event.target.value)}
+                  placeholder="Tìm thành viên"
+                  aria-label="Tìm thành viên trong nhóm"
+                />
+              ) : null}
+              {memberGroups.length === 0 ? (
+                <p className="member-none">Không có ai khớp với “{memberQuery}”.</p>
+              ) : null}
+              {memberGroups.map((group) => (
+                <section className="member-group" key={group.role}>
+                  <p className="member-section">
+                    {ROLE_LABEL[group.role] ?? group.role}
+                    <span className="member-section-count">{group.people.length}</span>
+                  </p>
+                  {group.people.map((member) => {
+                    const present = isPresent(member);
+                    return (
+                      <div className={present ? `member role-${group.role}` : `member offline role-${group.role}`} key={member.id}>
+                        <span className="member-avatar">
+                          <Avatar name={member.name} url={member.avatar_url} size={36} />
+                          <i className={present ? 'presence online' : 'presence'} aria-hidden="true" />
+                        </span>
+                        <span className="member-text">
+                          <span className="member-name">{member.name}{member.id === user.id ? ' (bạn)' : ''}</span>
+                          <span className="member-sub">
+                            {present
+                              ? 'Đang hoạt động'
+                              : member.username
+                                ? `@${member.username}`
+                                : 'Không hoạt động'}
+                          </span>
+                        </span>
+                      </div>
+                    );
+                  })}
+                </section>
               ))}
-            </div>
+            </>
           )}
 
           {canInvite ? (
