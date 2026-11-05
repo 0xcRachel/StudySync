@@ -23,6 +23,7 @@ import type {
 } from "@react-navigation/native-stack";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import NetInfo from "@react-native-community/netinfo";
 import * as ImagePicker from "expo-image-picker";
 import * as api from "./api";
 import { configureNotifications, notifyIncomingMessage } from "./notifications";
@@ -1417,6 +1418,14 @@ export function AppShell() {
   const [showCreate, setShowCreate] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
+  const [offline, setOffline] = useState(false);
+  useEffect(
+    () =>
+      NetInfo.addEventListener((state) => {
+        setOffline(state.isConnected === false);
+      }),
+    [],
+  );
   const refresh = useCallback(async () => {
     if (!session) return;
     try {
@@ -1497,6 +1506,13 @@ export function AppShell() {
   return (
     <AppContext.Provider value={appValue}>
       <SafeAreaView style={styles.root}>
+          {offline ? (
+            <View style={styles.offlineBar}>
+              <Text style={styles.offlineText}>
+                Không có kết nối — ứng dụng chỉ hiển thị dữ liệu đã tải trước đó
+              </Text>
+            </View>
+          ) : null}
           <NavigationContainer>
             <RootStack.Navigator screenOptions={{ headerShown: false }}>
               <RootStack.Screen name="tabs">{() => <RootTabs />}</RootStack.Screen>
@@ -1934,6 +1950,8 @@ const styles = StyleSheet.create({
   viewerImage: { width: "100%", height: "76%", borderRadius: 14, backgroundColor: C.panel },
   viewerClose: { marginTop: 16, color: C.ink, fontSize: 13, fontWeight: "700" },
   memberNameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  offlineBar: { backgroundColor: "#3B2130", paddingVertical: 8, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: C.line },
+  offlineText: { color: C.red, fontSize: 12, fontWeight: "700" },
   presenceDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.green },
   member: {
     flexDirection: "row",
