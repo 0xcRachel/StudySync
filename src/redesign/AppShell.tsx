@@ -105,6 +105,7 @@ function Button({
   secondary = false,
   compact = false,
   busy = false,
+  danger = false,
 }: {
   title: string;
   onPress: () => void;
@@ -112,6 +113,7 @@ function Button({
   compact?: boolean;
   /** Chặn double-tap trên các hành động async (gửi lời mời, chấp nhận nhóm…). */
   busy?: boolean;
+  danger?: boolean;
 }) {
   return (
     <Pressable
@@ -120,13 +122,18 @@ function Button({
       style={({ pressed }) => [
         styles.button,
         secondary && styles.buttonSecondary,
+        danger && styles.buttonDanger,
         compact && styles.buttonCompact,
         pressed && styles.pressed,
         busy && { opacity: 0.55 },
       ]}
     >
       <Text
-        style={[styles.buttonText, secondary && styles.buttonTextSecondary]}
+        style={[
+          styles.buttonText,
+          secondary && styles.buttonTextSecondary,
+          danger && styles.buttonTextDanger,
+        ]}
       >
         {busy ? "Đang…" : title}
       </Text>
@@ -407,6 +414,8 @@ function GroupScreen({
   const [attachment, setAttachment] = useState<api.PickedImage | null>(null);
   const [viewerUrl, setViewerUrl] = useState("");
   const [picking, setPicking] = useState(false);
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(false);
+  const [deletingGroup, setDeletingGroup] = useState(false);
   const [showTask, setShowTask] = useState(false);
   const [chatLoaded, setChatLoaded] = useState(false);
   const lastMessageId = useRef(0);
@@ -598,6 +607,28 @@ function GroupScreen({
       toast(e instanceof Error ? e.message : "Không mở được thư viện ảnh.", "error");
     } finally {
       setPicking(false);
+    }
+  };
+  const canManage = members.some(
+    (member) =>
+      member.id === user.id &&
+      (member.role === "owner" || member.role === "admin"),
+  );
+  const removeGroup = async () => {
+    if (!confirmDeleteGroup) {
+      setConfirmDeleteGroup(true);
+      setTimeout(() => setConfirmDeleteGroup(false), 5000);
+      return;
+    }
+    setDeletingGroup(true);
+    try {
+      await api.deleteGroup(group.id, token);
+      toast("Đã xoá nhóm.");
+      onBack();
+    } catch (e) {
+      setDeletingGroup(false);
+      setConfirmDeleteGroup(false);
+      toast(e instanceof Error ? e.message : "Không xoá được nhóm.", "error");
     }
   };
   const send = async () => {
@@ -968,6 +999,28 @@ function GroupScreen({
               </View>
             );
           })}
+          {canManage ? (
+            <View style={styles.dangerCard}>
+              <View style={styles.flex}>
+                <Text style={styles.taskTitle}>Xoá nhóm</Text>
+                <Text style={styles.pageSubtitle}>
+                  Công việc, tin nhắn và bình luận mất theo. Không hoàn tác được.
+                </Text>
+              </View>
+              <Button
+                title={
+                  deletingGroup
+                    ? "Đang xoá…"
+                    : confirmDeleteGroup
+                      ? "Xoá thật?"
+                      : "Xoá nhóm"
+                }
+                danger
+                busy={deletingGroup}
+                onPress={() => void removeGroup()}
+              />
+            </View>
+          ) : null}
         </ScrollView>
       )}
       <Modal visible={showTask} transparent animationType="fade">
@@ -1670,6 +1723,19 @@ const styles = StyleSheet.create({
   buttonCompact: { minHeight: 38, borderRadius: 11, paddingHorizontal: 14 },
   buttonText: { color: C.white, fontWeight: "800", fontSize: 14 },
   buttonTextSecondary: { color: C.ink },
+  buttonDanger: { backgroundColor: "transparent", borderWidth: 1, borderColor: C.red },
+  buttonTextDanger: { color: C.red },
+  dangerCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: C.panel,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.line,
+    marginTop: 14,
+  },
   switchText: {
     color: C.cyan,
     textAlign: "center",
