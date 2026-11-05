@@ -3,7 +3,7 @@ import * as api from '../lib/api';
 import type { Member, Task, TaskComment } from '../lib/api';
 import { NEXT_STATUS, STATUS_LABEL, formatDay, localStamp, relative } from '../lib/format';
 import { animateTaskCompletion } from '../lib/motion';
-import { Icon, StatusMark } from './ui';
+import { Avatar, Icon, StatusMark } from './ui';
 
 export function TaskRow({
   task,
@@ -132,10 +132,22 @@ export function TaskRow({
           </span>
         )}
         <div className="task-meta">
-          <span>{STATUS_LABEL[task.status]}</span>
-          {task.created_at ? <span>tạo {formatDay(task.created_at)}</span> : null}
-          <span>{task.assignees?.length ? `Phụ trách: ${task.assignees.map((person) => person.name).join(', ')}` : 'Chưa phân công'}</span>
-          {comments && comments.length > 0 ? <span>{comments.length} bình luận</span> : null}
+          <span className={`task-status s-${task.status}`}>{STATUS_LABEL[task.status]}</span>
+          {task.created_at ? <span className="task-when">tạo {formatDay(task.created_at)}</span> : null}
+          {task.assignees?.length ? (
+            <span className="task-people" title={task.assignees.map((person) => person.name).join(', ')}>
+              {task.assignees.slice(0, 3).map((person) => (
+                <Avatar key={person.id} name={person.name} url={person.avatar_url} size={22} />
+              ))}
+              {task.assignees.length > 3 ? <span className="task-people-more">+{task.assignees.length - 3}</span> : null}
+              <span className="task-people-label">
+                {task.assignees.length === 1 ? task.assignees[0].name : `${task.assignees.length} người phụ trách`}
+              </span>
+            </span>
+          ) : (
+            <span className="task-people none">Chưa phân công</span>
+          )}
+          {comments && comments.length > 0 ? <span className="task-chip">{comments.length} bình luận</span> : null}
         </div>
 
         <div className="task-tools">
@@ -157,7 +169,7 @@ export function TaskRow({
         </div>
 
         <details className="task-assign">
-          <summary>Phân công</summary>
+          <summary className="task-chip">Phân công</summary>
           <div className="task-assign-menu">
             {members.map((member) => (
               <label key={member.id}>
@@ -177,7 +189,7 @@ export function TaskRow({
             if ((event.currentTarget as HTMLDetailsElement).open && comments === null) void loadComments();
           }}
         >
-          <summary>Bình luận{comments && comments.length > 0 ? ` (${comments.length})` : ''}</summary>
+          <summary className="task-chip">Bình luận{comments && comments.length > 0 ? ` (${comments.length})` : ''}</summary>
           <div className="task-comment-list">
             {comments === null ? (
               <p className="task-comment-empty">Đang tải…</p>
