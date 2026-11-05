@@ -267,6 +267,11 @@ Frontend phân loại lỗi mạng, timeout, HTTP, JSON sai cú pháp và hiển
   - *Chat*: bong bóng hai bên (tin của mình bên phải), phân cách theo ngày, gom tin liên tiếp cùng người gửi, cảm xúc, trả lời, nhắc tên `@`, sửa/xoá, gửi ảnh (tin chỉ-ảnh không kèm chữ), chỉ báo "đang nhập", xác nhận đã đọc, nút tải thêm tin cũ mà không nhảy cuộn. Danh sách tin là vùng cuộn duy nhất; ô soạn thảo cao cố định, không trôi khi gõ.
   - *Thành viên*: vai trò (Chủ nhóm/Quản trị/Thành viên), trạng thái hoạt động, mời nhanh bạn bè, và **Xoá nhóm** chỉ hiện với owner/admin.
 - **Bạn bè / Thông báo / Hồ sơ**: kết bạn, chấp nhận lời mời, đánh dấu đã đọc, sửa hồ sơ, đổi mật khẩu.
+- **Layout theo khổ màn hình** (một container + CSS, không nhân đôi markup):
+  - ≥1280px — desktop thật: cột chính chứa Công việc/Thảo luận, **danh sách thành viên thành cột phải thường trực** (300px, có trạng thái hoạt động, lời mời và *Xoá nhóm*), tab Thành viên biến mất, bong bóng tin rộng tới 920px, `.page` mở tới 1500px.
+  - 981–1279px — một cột như cũ nhưng có sidebar nhóm.
+  - ≤980px — giao diện điện thoại: ẩn sidebar, hiện header + tab đáy.
+  Ngưỡng 1280px phải khớp giữa `styles.ts` và `useWideLayout` trong `screens/Group.tsx`; phóng to cửa sổ khi đang ở tab Thành viên sẽ tự đưa về Thảo luận vì tab đó không còn.
 
 Vòng trạng thái và tính nhất quán: UI đổi ngay (optimistic) → gọi API → khoá nút của item đang gửi → thành công thì đồng bộ object từ response, thất bại thì **rollback** và hiện toast tiếng Việt. Tải lại màn hình sẽ đọc trạng thái thật từ database.
 
