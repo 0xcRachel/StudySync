@@ -147,6 +147,11 @@ async function handlePacket(client, raw, socket, authTimeout) {
         client.notificationCursor = Number(latest[0]?.id ?? 0);
         if (!userClients.has(client.user.id)) userClients.set(client.user.id, new Set());
         userClients.get(client.user.id).add(client);
+        // Nạp mốc trước khi client nào kịp gửi tin: nếu để nhịp poll đầu tiên
+        // ghi, tin tới trong ~500ms sau khi kết nối sẽ bị coi là mốc khởi
+        // điểm và không bao giờ được báo.
+        client.unreadSeen = new Map();
+        for (const row of await unreadRowsFor(client.user.id)) client.unreadSeen.set(Number(row.group_id), Number(row.newest));
         clearTimeout(authTimeout);
         send(client, { type: 'ready', userId: client.user.id });
         return;
@@ -228,6 +233,10 @@ const MESSAGE_WINDOW = 100;
 const STATE_SYNC_INTERVAL_MS = 2000;
 const TRACKED_MESSAGE_LIMIT = 300;
 
+/**
+ * Discord đánh dấu lịch sử là đã đọc khi bạn vào kênh — xem
+ * seed_group_read_marker() trong helpers.php.
+ */
 async function pollMessages() {
   if (!pool || pollBusy) return;
   pollBusy = true;
@@ -324,11 +333,70 @@ async function pollNotifications() {
           }
         }
       }
+      await pollUnread(userId, connectedClients);
     }
   } catch (error) {
     console.error(`Real-time notification poll failed: ${error instanceof Error ? error.message : 'unknown error'}`);
   } finally {
     notificationPollBusy = false;
+  }
+}
+
+/**
+ * Badge chưa đọc kiểu Discord, tính cho MỌI nhóm của người đang online chứ
+ * không chỉ nhóm có người mở phòng — phòng trống mới chính là lúc cần báo.
+ */
+async function unreadRowsFor(userId) {
+  const [rows] = await pool.execute(
+    `SELECT gm.group_id, COALESCE(m.newest, 0) AS newest, COALESCE(r.last_message_id, 0) AS seen
+       FROM group_members gm
+       LEFT JOIN (
+         SELECT group_id, MAX(id) AS newest FROM messages
+          WHERE deleted_at IS NULL AND sender_id <> ? GROUP BY group_id
+       ) m ON m.group_id = gm.group_id
+       LEFT JOIN message_reads r ON r.group_id = gm.group_id AND r.user_id = ?
+      WHERE gm.user_id = ?`,
+    [userId, userId, userId],
+  );
+  return rows;
+}
+
+async function pollUnread(userId, connectedClients) {
+  const rows = await unreadRowsFor(userId);
+
+  for (const client of connectedClients) {
+    // Mốc được nạp ngay khi xác thực (xem scope 'user' ở handlePacket), nên
+    // previous luôn có cho mọi nhóm mà người này đã tham gia. Nếu đợi nhịp
+    // đầu tiên mới ghi thì tin gửi trong ~500ms sau khi kết nối sẽ bị nuốt.
+    if (!client.unreadSeen) client.unreadSeen = new Map();
+    for (const row of rows) {
+      const groupId = Number(row.group_id);
+      const newest = Number(row.newest);
+      const previous = client.unreadSeen.get(groupId);
+      client.unreadSeen.set(groupId, newest);
+      // previous === undefined: mới vào nhóm sau khi kết nối, coi là mốc khởi
+      // điểm (lúc tham gia seed_group_read_marker đã đánh dấu lịch sử là đọc).
+      if (previous === undefined || newest <= previous || newest <= Number(row.seen)) continue;
+      // Người này đang xem nhóm đó ở socket khác thì không báo chưa đọc.
+      const room = rooms.get(groupId);
+      if (room && [...room.clients].some((entry) => Number(entry.user.id) === Number(userId))) continue;
+      const [detail] = await pool.execute(
+        'SELECT m.id, m.body, m.image_name, u.name AS sender_name FROM messages m JOIN users u ON u.id = m.sender_id WHERE m.id = ?',
+        [newest],
+      );
+      if (detail.length === 0) continue;
+      const message = detail[0];
+      send(client, {
+        type: 'unread',
+        data: {
+          groupId,
+          messageId: Number(message.id),
+          senderName: message.sender_name,
+          body: String(message.body ?? '').slice(0, 120),
+          hasImage: message.image_name !== null,
+        },
+      });
+    }
   }
 }
 

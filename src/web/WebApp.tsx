@@ -12,6 +12,7 @@ import type { Notifications as NotificationsState } from './lib/useNotifications
 import { CSS, FONT_HREF } from './styles';
 import { ToastProvider, useToast } from './components/Toast';
 import { useUserRealtime } from '../lib/useUserRealtime';
+import type { UnreadSignal } from '../lib/useUserRealtime';
 import { MobileHead, Rail, TabBar } from './components/Rail';
 import { Brand, EmptyState } from './components/ui';
 import { Landing } from './screens/Landing';
@@ -310,7 +311,27 @@ function Workspace() {
     window.dispatchEvent(new CustomEvent('studysync:notification', { detail: notification }));
   }, []);
 
-  useUserRealtime({ enabled: Boolean(token) && !booting, token: token ?? '', onNotification: onRealtimeNotification });
+  /**
+   * Số chưa đọc trên sidebar phải sáng lên ngay khi tin vừa tới, không chờ
+   * 8 giây. Server bỏ qua người đang xem nhóm đó nên ở đây cứ cộng 1 là đúng;
+   * lần polling kế tiếp đối chiếu lại với mốc đọc thật trong database.
+   */
+  const onRealtimeUnread = useCallback((signal: UnreadSignal) => {
+    setGroups((current) =>
+      current.map((group) =>
+        group.id === signal.groupId
+          ? { ...group, unread_count: Math.max(0, Number(group.unread_count ?? 0) + 1) }
+          : group,
+      ),
+    );
+  }, []);
+
+  useUserRealtime({
+    enabled: Boolean(token) && !booting,
+    token: token ?? '',
+    onNotification: onRealtimeNotification,
+    onUnread: onRealtimeUnread,
+  });
 
   useEffect(() => {
     if (!session || booting || groupsLoading || route.name !== 'home') return undefined;
@@ -472,6 +493,27 @@ function Workspace() {
     window.addEventListener('studysync:notification', onNotification);
     return () => window.removeEventListener('studysync:notification', onNotification);
   }, [token, loadGroups]);
+
+  /**
+   * Tab chat vừa gửi mốc đọc thì badge phải tụt ngay — con số vừa được cộng
+   * tức thì ở trên không nên phải chờ tới nhịp polling kế tiếp.
+   */
+  useEffect(() => {
+    if (!token) return undefined;
+    const onGroupRead = (event: Event) => {
+      const detail = (event as CustomEvent<{ groupId: number }>).detail;
+      if (!detail || !Number.isSafeInteger(detail.groupId)) return;
+      setGroups((current) =>
+        current.map((group) =>
+          group.id === detail.groupId
+            ? { ...group, unread_count: 0, mention_count: 0 }
+            : group,
+        ),
+      );
+    };
+    window.addEventListener('studysync:group-read', onGroupRead);
+    return () => window.removeEventListener('studysync:group-read', onGroupRead);
+  }, [token]);
 
   useEffect(() => {
     if (!token) return undefined;

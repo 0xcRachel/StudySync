@@ -321,7 +321,9 @@ export function GroupScreen({
   useEffect(() => {
     if (tab !== 'chat' || realtimeStatus !== 'connected' || messages.length === 0 || document.visibilityState === 'hidden') return;
     sendRead(messages[messages.length - 1].id);
-  }, [tab, realtimeStatus, messages, sendRead]);
+    // Badge trên sidebar về 0 ngay, thay vì chờ lần polling kế tiếp đối chiếu.
+    window.dispatchEvent(new CustomEvent('studysync:group-read', { detail: { groupId } }));
+  }, [tab, realtimeStatus, messages, sendRead, groupId]);
 
   // Periodic reconciliation catches reaction changes and provides a fallback if the socket is unavailable.
   useEffect(() => {

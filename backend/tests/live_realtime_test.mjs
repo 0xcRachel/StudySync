@@ -121,7 +121,38 @@ try {
   const friendRequest = await friendRecipientSocket.waitFor((packet) => packet.type === 'notification' && packet.data?.type === 'friend_request');
   assert(friendRequest.data.body.includes('FriendSender'), 'Friend request notification was not delivered live');
   assert(friendRequest.data.data?.user_id === friendSender.user.id, 'Friend request sender metadata mismatch');
-  console.log('✓ Live MySQL/WebSocket: group chat events and account-scoped friend request notifications');
+  // Unread badge path: vào nhóm đã có tin nhắn thì lịch sử phải tính là đã
+  // đọc, và tin kế tiếp phải tới được người KHÔNG ngồi trong phòng nhóm đó.
+  const lateJoiner = await register('LateJoiner');
+  await request('/invite_group_member.php', { group_id: groupId, user_id: lateJoiner.user.id }, ownerToken);
+  const lateInvitations = await request('/group_invitations.php', undefined, lateJoiner.token);
+  const lateInvite = lateInvitations.find((item) => item.group_id === groupId && item.status === 'pending');
+  assert(lateInvite, 'Late joiner never received the group invitation');
+  await request('/respond_group_invitation.php', { invitation_id: lateInvite.id, action: 'accept' }, lateJoiner.token);
+  const seededGroups = await request('/list_groups.php', undefined, lateJoiner.token);
+  const seededGroup = seededGroups.find((item) => item.id === groupId);
+  assert(seededGroup && seededGroup.unread_count === 0, 'Joining a group with history reported unread messages');
+
+  const lateSocket = connectUser(lateJoiner.token);
+  await lateSocket.ready;
+  const unreadPing = await request('/messages.php', { group_id: groupId, body: 'Unread ping' }, ownerToken);
+  const ping = await lateSocket.waitFor((packet) => packet.type === 'unread' && packet.data?.groupId === groupId && packet.data?.messageId === unreadPing.id);
+  assert(ping.data.senderName === owner.user.name, 'Unread push sender name mismatch');
+  assert(ping.data.body === 'Unread ping', 'Unread push preview mismatch');
+  const bumpedGroups = await request('/list_groups.php', undefined, lateJoiner.token);
+  assert(bumpedGroups.find((item) => item.id === groupId).unread_count === 1, 'unread_count did not follow the new message');
+
+  // Người đang xem nhóm không được nhận tin "chưa đọc" về chính nhóm đó.
+  const viewerSocket = connectUser(member.token);
+  await viewerSocket.ready;
+  const ignored = await request('/messages.php', { group_id: groupId, body: 'Viewed in place' }, ownerToken);
+  const notForViewer = await memberSocket.waitFor((packet) => packet.type === 'message' && packet.data?.id === ignored.id);
+  assert(notForViewer.data.body === 'Viewed in place', 'Viewer did not receive the live message');
+  let unreadForViewer = false;
+  try { await viewerSocket.waitFor((packet) => packet.type === 'unread' && packet.data?.messageId === ignored.id, 1500); unreadForViewer = true; } catch { /* đúng: đang xem thì không báo chưa đọc */ }
+  assert(!unreadForViewer, 'Unread push reached a member who is viewing the group');
+
+  console.log('✓ Live MySQL/WebSocket: group chat events, account-scoped notifications, unread badge pushes');
 } finally {
   for (const socket of sockets) socket.close();
   try { if (groupId && ownerToken) await request('/delete_group.php', { id: groupId }, ownerToken); } catch { /* cleanup continues */ }

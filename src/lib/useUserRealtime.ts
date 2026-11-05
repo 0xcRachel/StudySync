@@ -2,21 +2,36 @@ import { useEffect, useRef } from 'react';
 import { REALTIME_URL } from '../config/api';
 import type { Notification } from '../web/lib/api';
 
+export type UnreadSignal = {
+  groupId: number;
+  messageId: number;
+  senderName: string;
+  body: string;
+  hasImage: boolean;
+};
+
 /** Keeps account-scoped notifications live even when the user is outside a group chat. */
 export function useUserRealtime({
   enabled,
   token,
   onNotification,
+  onUnread,
 }: {
   enabled: boolean;
   token: string;
   onNotification: (notification: Notification) => void;
+  onUnread?: (signal: UnreadSignal) => void;
 }): void {
   const onNotificationRef = useRef(onNotification);
+  const onUnreadRef = useRef(onUnread);
 
   useEffect(() => {
     onNotificationRef.current = onNotification;
   }, [onNotification]);
+
+  useEffect(() => {
+    onUnreadRef.current = onUnread;
+  }, [onUnread]);
 
   useEffect(() => {
     if (!enabled || !token) return undefined;
@@ -35,7 +50,7 @@ export function useUserRealtime({
         currentSocket.send(JSON.stringify({ type: 'auth', scope: 'user', token }));
       };
       currentSocket.onmessage = (event) => {
-        let packet: { type?: string; data?: Notification };
+        let packet: { type?: string; data?: Notification | UnreadSignal };
         try {
           packet = JSON.parse(String(event.data));
         } catch {
@@ -46,7 +61,10 @@ export function useUserRealtime({
           return;
         }
         if (packet.type === 'notification' && packet.data) {
-          onNotificationRef.current(packet.data);
+          onNotificationRef.current(packet.data as Notification);
+        }
+        if (packet.type === 'unread' && packet.data) {
+          onUnreadRef.current?.(packet.data as UnreadSignal);
         }
       };
       currentSocket.onerror = () => currentSocket.close();

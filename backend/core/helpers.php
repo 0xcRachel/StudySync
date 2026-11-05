@@ -312,6 +312,37 @@ function ensure_group_exists(PDO $pdo, int $groupId): void
 }
 
 /**
+ * Discord đánh dấu lịch sử là "đã đọc" ngay khi bạn vào kênh. Không có mốc
+ * này thì thành viên mới thấy toàn bộ tin cũ chưa đọc và badge hiện số
+ * khổng lồ từ lần đầu mở danh sách nhóm.
+ *
+ * Viết tay từng bước (không dùng ON DUPLICATE / GREATEST) để chạy được cả
+ * MySQL lẫn SQLite.
+ */
+function seed_group_read_marker(PDO $pdo, int $groupId, int $userId): void
+{
+    $latest = $pdo->prepare('SELECT COALESCE(MAX(id), 0) FROM messages WHERE group_id = ?');
+    $latest->execute([$groupId]);
+    $newest = (int) $latest->fetchColumn();
+
+    $current = $pdo->prepare('SELECT last_message_id FROM message_reads WHERE group_id = ? AND user_id = ? LIMIT 1');
+    $current->execute([$groupId, $userId]);
+    $seen = $current->fetchColumn();
+
+    if ($seen !== false) {
+        if ((int) $seen >= $newest) {
+            return;
+        }
+        $update = $pdo->prepare('UPDATE message_reads SET last_message_id = ? WHERE group_id = ? AND user_id = ?');
+        $update->execute([$newest, $groupId, $userId]);
+        return;
+    }
+
+    $insert = $pdo->prepare('INSERT INTO message_reads (group_id, user_id, last_message_id) VALUES (?, ?, ?)');
+    $insert->execute([$groupId, $userId, $newest]);
+}
+
+/**
  * Bọc endpoint để mọi lỗi đều trả JSON, không lộ HTML/PHP warning ra client.
  *
  * @param callable(): void $handler

@@ -12,5 +12,8 @@ run_api(static function (): void {
         ? 'INSERT IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, "member")'
         : 'INSERT OR IGNORE INTO group_members (group_id, user_id, role) VALUES (?, ?, "member")';
     $pdo->beginTransaction(); try { $pdo->prepare('UPDATE group_invitations SET status = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ?')->execute([$status, $invitationId]); if ($status === 'accepted') $pdo->prepare($joinSql)->execute([(int) $invitation['group_id'], $me['id']]); $pdo->commit(); } catch (Throwable $error) { $pdo->rollBack(); throw $error; }
+    // Vào nhóm đã có tin nhắn thì lịch sử tính là đã đọc; không có mốc này,
+    // badge của thành viên mới hiện số đếm từ trước khi họ tham gia.
+    if ($status === 'accepted') seed_group_read_marker($pdo, (int) $invitation['group_id'], (int) $me['id']);
     send_json(['success' => true, 'message' => $status === 'accepted' ? 'Đã tham gia nhóm.' : 'Đã từ chối lời mời.']);
 });
