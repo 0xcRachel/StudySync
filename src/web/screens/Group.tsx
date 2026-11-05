@@ -162,6 +162,7 @@ export function GroupScreen({
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [olderLoading, setOlderLoading] = useState(false);
   const [hasOlder, setHasOlder] = useState(false);
+  const [chatQuery, setChatQuery] = useState('');
   const [mentionIndex, setMentionIndex] = useState(0);
   // null = chưa ẩn; rỗng '' sẽ đụng đúng query của dấu "@" trần nên không
   // dùng làm giá trị mặc định được.
@@ -754,8 +755,18 @@ export function GroupScreen({
   // Backend moderation of other people's messages allows owner/admin, so the
   // delete control has to appear for them too, not only for the sender.
   const canModerate = canInvite;
-  const chatRows = messages.map((message, index) => {
-    const previous = index > 0 ? messages[index - 1] : undefined;
+  /**
+   * Tìm kiếm chạy trên danh sách đã tải, không gọi API: khung chat chỉ giữ
+   * 300 tin gần nhất nên lọc phía client là đúng phạm vi người dùng đang thấy.
+   */
+  const chatNeedle = chatQuery.trim().toLocaleLowerCase();
+  const chatSource = chatNeedle === ''
+    ? messages
+    : messages.filter((message) =>
+        message.body.toLocaleLowerCase().includes(chatNeedle)
+        || message.sender_name.toLocaleLowerCase().includes(chatNeedle));
+  const chatRows = chatSource.map((message, index) => {
+    const previous = index > 0 ? chatSource[index - 1] : undefined;
     return {
       message,
       showDay: !previous || !sameMoment(previous.created_at, message.created_at),
@@ -782,75 +793,143 @@ export function GroupScreen({
     .filter(([readerId, value]) => Number(readerId) !== user.id && value.messageId >= latestOwnMessageId)
     .map(([, value]) => value.name);
 
+  const channels = [
+    { key: 'tasks' as const, label: 'công việc', count: tasks.length },
+    { key: 'chat' as const, label: 'thảo-luận', count: 0 },
+  ];
+
   return (
     <>
-      <button type="button" className="back" onClick={onBack}>
-        Tất cả nhóm
-      </button>
+      <div className={wide ? 'group-layout wide' : 'group-layout'}>
+        {wide ? (
+          <nav className="channel-list" aria-label="Kênh của nhóm">
+            <button type="button" className="channel-back" onClick={onBack}>
+              <span className="channel-back-arrow" aria-hidden="true">‹</span>
+              Tất cả nhóm
+            </button>
+            <div className="channel-server">
+              <span className="channel-server-name">{group?.name ?? 'Nhóm học tập'}</span>
+              <span className="channel-server-meta">{headerMeta}</span>
+            </div>
+            <p className="channel-section">Kênh chữ</p>
+            {channels.map((channel) => (
+              <button
+                type="button"
+                key={channel.key}
+                className={tab === channel.key ? 'channel-row active' : 'channel-row'}
+                aria-current={tab === channel.key ? 'true' : undefined}
+                onClick={() => selectTab(channel.key)}
+              >
+                <span className="channel-hash" aria-hidden="true">#</span>
+                <span className="channel-name">{channel.label}</span>
+                {channel.count > 0 ? <span className="channel-count">{channel.count}</span> : null}
+                {channel.key === 'chat' && Math.max(0, Number(group?.unread_count ?? 0)) > 0 ? (
+                  <span className="channel-unread" aria-label="tin chưa đọc" />
+                ) : null}
+              </button>
+            ))}
+            <button
+              type="button"
+              className={tab === 'members' ? 'channel-row people active' : 'channel-row people'}
+              onClick={() => selectTab('members')}
+            >
+              <Icon name="users" size={15} />
+              <span className="channel-name">Thành viên</span>
+              {members.length > 0 ? <span className="channel-count">{members.length}</span> : null}
+            </button>
+          </nav>
+        ) : null}
 
-      <div className="phead">
-        <div>
-          <h1 className="h1">{group?.name ?? 'Nhóm học tập'}</h1>
-          <p className="psub">{headerMeta}</p>
-        </div>
-        {tab === 'tasks' && tasksLoaded ? (
-          <div className="actions">
-            <span className="micro faint num">{progress}% xong</span>
+        <div className="group-main">
+        {!wide ? (
+          <>
+            <button type="button" className="back" onClick={onBack}>
+              Tất cả nhóm
+            </button>
+
+            <div className="phead">
+              <div>
+                <h1 className="h1">{group?.name ?? 'Nhóm học tập'}</h1>
+                <p className="psub">{headerMeta}</p>
+              </div>
+              {tab === 'tasks' && tasksLoaded ? (
+                <div className="actions">
+                  <span className="micro faint num">{progress}% xong</span>
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : (
+          <div className="channel-head">
+            {tab === 'members' ? (
+              <Icon name="users" size={17} />
+            ) : (
+              <span className="channel-hash large" aria-hidden="true">#</span>
+            )}
+            <h1 className="channel-title">
+              {tab === 'tasks' ? 'công việc' : tab === 'chat' ? 'thảo-luận' : 'Thành viên'}
+            </h1>
+            <span className="channel-topic">{group?.description || headerMeta}</span>
+            {tab === 'chat' && messages.length > 0 ? (
+              <input
+                className="channel-search"
+                value={chatQuery}
+                onChange={(event) => setChatQuery(event.target.value)}
+                placeholder={`Tìm trong ${messages.length} tin`}
+                aria-label="Tìm tin nhắn trong nhóm"
+              />
+            ) : null}
+            {tab === 'tasks' && tasksLoaded ? <span className="channel-badge">{progress}% xong</span> : null}
+          </div>
+        )}
+        {!wide ? (
+          <div className="tabs" role="tablist" aria-label="Nội dung nhóm" ref={tabsRef} onKeyDown={onTabKey}>
+            <button
+              type="button"
+              role="tab"
+              id="tab-tasks"
+              aria-selected={tab === 'tasks'}
+              aria-controls="panel-tasks"
+              className="tab"
+              onClick={() => selectTab('tasks')}
+            >
+              Công việc
+              {tasks.length > 0 ? <span className="tab-count">{tasks.length}</span> : null}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tab-chat"
+              aria-selected={tab === 'chat'}
+              aria-controls="panel-chat"
+              className="tab"
+              onClick={() => selectTab('chat')}
+            >
+              Thảo luận
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tab-members"
+              aria-selected={tab === 'members'}
+              aria-controls="panel-members"
+              className="tab"
+              onClick={() => selectTab('members')}
+            >
+              Thành viên
+              {members.length > 0 ? <span className="tab-count">{members.length}</span> : null}
+            </button>
+            <span className="tab-ink" aria-hidden="true" />
           </div>
         ) : null}
-      </div>
 
-      <div className="tabs" role="tablist" aria-label="Nội dung nhóm" ref={tabsRef} onKeyDown={onTabKey}>
-        <button
-          type="button"
-          role="tab"
-          id="tab-tasks"
-          aria-selected={tab === 'tasks'}
-          aria-controls="panel-tasks"
-          className="tab"
-          onClick={() => selectTab('tasks')}
-        >
-          Công việc
-          {tasks.length > 0 ? <span className="tab-count">{tasks.length}</span> : null}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-chat"
-          aria-selected={tab === 'chat'}
-          aria-controls="panel-chat"
-          className="tab"
-          onClick={() => selectTab('chat')}
-        >
-          Thảo luận
-        </button>
-        {!wide ? (
-          <button
-            type="button"
-            role="tab"
-            id="tab-members"
-            aria-selected={tab === 'members'}
-            aria-controls="panel-members"
-            className="tab"
-            onClick={() => selectTab('members')}
-          >
-            Thành viên
-            {members.length > 0 ? <span className="tab-count">{members.length}</span> : null}
-          </button>
+        {error ? (
+          <div style={{ marginTop: 18 }}>
+            <ErrorBar message={error} onRetry={retry} />
+          </div>
         ) : null}
-        <span className="tab-ink" aria-hidden="true" />
-      </div>
 
-      {error ? (
-        <div style={{ marginTop: 18 }}>
-          <ErrorBar message={error} onRetry={retry} />
-        </div>
-      ) : null}
-
-      {/* Một container duy nhất để CSS đổi giữa "một cột dọc" (mobile) và
-          "nội dung + cột thành viên" (desktop) mà không nhân đôi markup. */}
-      <div className="group-shell">
-      {tab === 'tasks' ? (
+        {tab === 'tasks' ? (
         <section id="panel-tasks" role="tabpanel" aria-labelledby="tab-tasks">
           <div className="filters">
             <div className="filter-set" role="group" aria-label="Lọc công việc">
@@ -979,6 +1058,11 @@ export function GroupScreen({
                   </button>
                 </div>
               ) : null}
+              {chatNeedle !== '' && chatSource.length === 0 ? (
+                <p className="chat-search-empty">
+                  Không có tin nhắn khớp với “{chatQuery}” trong {messages.length} tin đã tải.
+                </p>
+              ) : null}
               {chatRows.map(({ message, showDay, continuation }) => (
                 <div className="chat-unit" key={`unit-${message.id}`}>
                   {showDay ? <p className="chat-day"><span>{dayLabel(message.created_at)}</span></p> : null}
@@ -1043,7 +1127,10 @@ export function GroupScreen({
           </form>
         </section>
       ) : null}
+        </div>
 
+      {/* Cột thành viên là anh em trực tiếp của .group-main: mobile xếp xuống
+          dưới nội dung, desktop nằm ở cột thứ ba của grid. */}
       {(wide || tab === 'members') ? (
         <section
           id="panel-members"

@@ -832,10 +832,14 @@ textarea.field {
 .btn-danger-quiet:hover { border-color: rgba(142,50,35,.45); color: var(--danger); background: rgba(142,50,35,.05); }
 .btn-danger { border: 1px solid var(--danger); background: var(--danger); color: #f6efe9; white-space: nowrap; }
 
-/* Container của ba panel màn nhóm. Mobile: một cột dọc, chuỗi flex:1 +
-   min-height:0 đi thẳng từ .page xuống .chat như trước. Desktop: grid hai
-   cột, thành viên sang cột phải thường trực (xem useWideLayout). */
-.group-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* Điều hướng màn nhóm. Mobile: .group-layout là cột dọc chứa .group-main,
+   tab vẫn là cách đổi khung. Desktop: grid ba cột kênh | nội dung | thành viên.
+   Panels nằm trong .group-main nên chuỗi flex cao (flex:1 + min-height:0)
+   phải liền mạch từ .page xuống .chat — thiếu một mức là ô soạn thảo trồi. */
+.group-layout { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.group-main { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.channel-list, .channel-head { display: none; }
+.chat-search-empty { margin: 6px 0 14px; color: var(--ink-3); font-size: 12.5px; }
 
 /* ---------- Chat ---------- */
 /* Khung chat chiếm hết chiều cao còn lại: danh sách tin là vùng cuộn riêng,
@@ -1292,32 +1296,65 @@ textarea.field {
   .grow { grid-template-columns: minmax(0, 1fr) 120px 56px; gap: 16px; }
 }
 
-/* Desktop thật: cột nội dung + cột thành viên thường trực, như Discord/Slack.
-   Ngưỡng này phải khớp useWideLayout() trong screens/Group.tsx. */
+/* Desktop thật: cột kênh + khung nội dung + cột thành viên, như Discord/Slack.
+   Ngưỡng này phải khớp WIDE_QUERY trong screens/Group.tsx. */
 @media (min-width: 1280px) {
   .page { max-width: 1500px; }
-  .group-shell {
+  .group-layout.wide {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: 232px minmax(0, 1fr) 300px;
     grid-template-rows: minmax(0, 1fr);
-    gap: 28px;
-    align-items: stretch;
+    flex: 1;
+    min-height: 0;
   }
-  #panel-tasks, #panel-chat { grid-column: 1; grid-row: 1; min-width: 0; }
+  .group-layout.wide .group-main { grid-column: 2; grid-row: 1; padding-inline: 22px; }
   #panel-members {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
     min-height: 0;
     overflow-y: auto;
-    padding-left: 24px;
+    padding: 0 16px 0 20px;
     border-left: 1px solid var(--line);
     scrollbar-width: thin;
   }
-  /* Tin nhắn dùng hết bề rộng mới có: bong bóng 660px là con số của màn 1080px. */
+
+  .channel-list {
+    display: block;
+    grid-column: 1;
+    grid-row: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 6px 12px 16px 20px;
+    border-right: 1px solid var(--line);
+    scrollbar-width: thin;
+  }
+  .channel-back { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 8px; border-radius: 6px; color: var(--ink-3); font-size: 12.5px; transition: background-color .14s ease, color .14s ease; }
+  .channel-back:hover { background: var(--sunk); color: var(--ink); }
+  .channel-back-arrow { font-size: 16px; line-height: .8; }
+  .channel-server { padding: 12px 8px 13px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .channel-server-name { display: block; font-size: 15.5px; font-weight: 600; letter-spacing: -.018em; color: var(--ink); overflow-wrap: anywhere; }
+  .channel-server-meta { display: block; margin-top: 4px; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .channel-section { margin: 12px 8px 4px; font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
+  .channel-row { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; border-radius: 6px; color: var(--ink-2); font-size: 13.5px; letter-spacing: -.006em; transition: background-color .14s ease, color .14s ease; }
+  .channel-row:hover { background: var(--sunk); color: var(--ink); }
+  .channel-row.active { background: var(--wash); color: var(--pine); font-weight: 550; }
+  .channel-hash { flex: none; width: 15px; text-align: center; color: var(--ink-3); font-size: 15px; }
+  .channel-row:hover .channel-hash, .channel-row.active .channel-hash { color: inherit; }
+  .channel-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .channel-count { margin-left: auto; flex: none; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .channel-unread { margin-left: auto; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--pine); }
+
+  .channel-head { display: flex; align-items: center; gap: 8px; padding: 0 0 11px; margin: 0 0 12px; border-bottom: 1px solid var(--line); }
+  .channel-hash.large { font-size: 19px; }
+  .channel-title { font-size: 16px; font-weight: 600; letter-spacing: -.018em; color: var(--ink); }
+  .channel-topic { margin-left: 4px; padding-left: 11px; border-left: 1px solid var(--line); font-size: 12px; color: var(--ink-3); max-width: 44ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .channel-search { flex: none; width: 210px; margin-left: auto; padding: 7px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; font-size: 12.5px; outline: 0; transition: border-color .16s ease, width .18s ease; }
+  .channel-search:focus { border-color: #8aa697; width: 280px; }
+  .channel-badge { margin-left: auto; padding: 5px 9px; border-radius: 999px; background: var(--wash); color: var(--pine); font-size: 11px; font-weight: 550; font-variant-numeric: tabular-nums; }
+
+  /* Tin nhắn dùng hết bề rộng mới có: 660px là con số của màn một cột. */
   .msg-content { max-width: min(920px, 92%); }
   .chat-image-link { max-width: min(560px, 100%); }
-  .member { padding: 10px 0; }
-  .member-sub { font-size: 11px; }
 }
 
 @media (max-width: 980px) {
