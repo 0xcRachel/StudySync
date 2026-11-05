@@ -596,9 +596,11 @@ textarea.field {
 
 .main { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
 .page {
+  /* Auto margin ở trục CROSS của flex item sẽ vô hiệu hoá align-items:stretch,
+     nên page co về bề rộng nội dung (~528px) và mọi thứ bị crop. Phải cho nó
+     width:100% để auto margin chỉ còn việc căn giữa. */
+  width: 100%;
   max-width: 1080px;
-  /* Không tự căn giữa thì ở màn 1918px toàn bộ cột nội dung dính sát sidebar
-     và để trống ~640px phía phải. */
   margin-inline: auto;
   padding: clamp(34px, 4.4vw, 68px) var(--pad) 140px;
   flex: 1;
