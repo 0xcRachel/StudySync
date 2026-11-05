@@ -917,17 +917,28 @@ function GroupScreen({
               ))}
             </View>
           ) : null}
-          {members.map((member) => (
-            <View key={member.id} style={styles.member}>
-              <Avatar name={member.name} url={member.avatar_url} size={38} />
-              <View style={styles.flex}>
-                <Text style={styles.taskTitle}>{member.name}</Text>
-                <Text style={styles.pageSubtitle}>
-                  {roleLabel[member.role] ?? member.role} · {member.email}
-                </Text>
+          {members.map((member) => {
+            const online = realtime.onlineUserIds.includes(member.id);
+            return (
+              <View key={member.id} style={styles.member}>
+                <Avatar name={member.name} url={member.avatar_url} size={38} />
+                <View style={styles.flex}>
+                  <View style={styles.memberNameRow}>
+                    <Text style={styles.taskTitle}>{member.name}</Text>
+                    {online ? <View style={styles.presenceDot} /> : null}
+                  </View>
+                  <Text style={styles.pageSubtitle}>
+                    {roleLabel[member.role] ?? member.role} ·{" "}
+                    {online
+                      ? "Đang hoạt động"
+                      : member.id === user.id
+                        ? "Bạn"
+                        : member.email}
+                  </Text>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </ScrollView>
       )}
       <Modal visible={showTask} transparent animationType="fade">
@@ -1894,6 +1905,8 @@ const styles = StyleSheet.create({
   },
   viewerImage: { width: "100%", height: "76%", borderRadius: 14, backgroundColor: C.panel },
   viewerClose: { marginTop: 16, color: C.ink, fontSize: 13, fontWeight: "700" },
+  memberNameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  presenceDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.green },
   member: {
     flexDirection: "row",
     alignItems: "center",
