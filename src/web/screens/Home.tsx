@@ -204,15 +204,28 @@ export function Home({
         ) : (
           groups.map((group) => {
             const pct = percent(Number(group.completed_count), Number(group.task_count));
+            const unread = Math.max(0, Number(group.unread_count ?? 0));
+            const mentions = Math.max(0, Number(group.mention_count ?? 0));
             return (
               <button
                 type="button"
-                className="grow"
+                className={unread > 0 ? 'grow unread' : 'grow'}
                 key={group.id}
                 onClick={() => onOpenGroup(group)}
               >
                 <span>
-                  <span className="grow-name">{group.name}</span>
+                  <span className="grow-name">
+                    {group.name}
+                    {mentions > 0 ? (
+                      <span className="grow-mention" aria-label={`${mentions} tin nhắc đến bạn`}>
+                        @{mentions > 99 ? '99+' : mentions}
+                      </span>
+                    ) : unread > 0 ? (
+                      <span className="grow-unread" aria-label={`${unread} tin chưa đọc`}>
+                        {unread > 99 ? '99+' : unread}
+                      </span>
+                    ) : null}
+                  </span>
                   <span className="grow-meta">
                     {group.completed_count} trên {group.task_count} việc đã xong
                   </span>

@@ -674,15 +674,30 @@ textarea.field {
   gap: 22px;
   align-items: center;
   width: 100%;
-  padding: 18px 0;
+  padding: 16px 12px;
+  margin-inline: -12px;
+  border-radius: 10px;
   border-bottom: 1px solid var(--line);
-  transition: opacity .16s ease;
+  transition: background-color .16s ease, opacity .16s ease;
 }
-.grow:hover { opacity: .82; }
-.grow-name { display: block; font-size: 16px; letter-spacing: -.018em; font-weight: 500; }
+/* opacity làm cả hàng mờ như bị vô hiệu hoá; hover phải là mặt nền, kiểu Discord. */
+.grow:hover { background: var(--sunk); }
+.grow-name { display: flex; align-items: center; gap: 8px; font-size: 16px; letter-spacing: -.018em; font-weight: 500; }
+.grow.unread .grow-name { font-weight: 600; color: var(--ink); }
+.grow.unread .grow-meta { color: var(--ink-2); }
+.grow-unread, .grow-mention {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.grow-unread { background: var(--sunk); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+.grow-mention { background: var(--danger); color: #f6efe9; }
 .grow-meta { display: block; margin-top: 4px; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-.grow-prog { height: 1px; background: var(--line); position: relative; }
-.grow-prog i { position: absolute; inset: 0 auto 0 0; background: var(--pine); }
+.grow-prog { height: 4px; border-radius: 999px; background: var(--line); position: relative; overflow: hidden; }
+.grow-prog i { position: absolute; inset: 0 auto 0 0; background: var(--pine); border-radius: 999px; transition: width .3s ease; }
 .grow-pct { font-size: 12px; color: var(--ink-3); text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ---------- Tabs ---------- */
@@ -1147,12 +1162,15 @@ textarea.field {
 .boot .brand .word { font-size: 19px; }
 
 .empty {
-  padding: 56px 0 48px;
-  border-bottom: 1px solid var(--line);
+  padding: 34px 30px 32px;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,.5);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
+  gap: 8px;
 }
 .empty-title { font-size: 16px; letter-spacing: -.015em; }
 .empty p { font-size: 13.5px; color: var(--ink-2); max-width: 44ch; }
@@ -1477,7 +1495,9 @@ textarea.field {
   .lede { font-size: 15.5px; margin-top: 24px; }
   .stat-num { font-size: 28px; }
   .stat-label { font-size: 11.5px; }
-  .grow { grid-template-columns: minmax(0, 1fr) 44px; padding: 15px 0; }
+  /* .grow âm lề 12px để mặt nền hover loang sát mép, nên padding ngang phải
+     giữ 12px — để 0 là nội dung trên mobile lệch sang trái 12px. */
+  .grow { grid-template-columns: minmax(0, 1fr) 44px; padding: 15px 12px; }
   .grow-prog { display: none; }
   .filters { flex-direction: column; align-items: flex-start; gap: 10px; }
   .filter-set { gap: 16px; }
