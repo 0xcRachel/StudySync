@@ -390,6 +390,25 @@ function HomeScreen({
   );
 }
 
+/**
+ * Tô sáng "@Tên thành viên" trong nội dung tin, cùng luật tách với renderBody
+ * của bản web (boundary sau tên để "@Gia" không ăn khớp "@Gia Bao").
+ */
+function bodyWithMentions(body: string, names: string[]) {
+  if (body === "" || names.length === 0) return body;
+  const escaped = names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const matcher = new RegExp(`(@(?:${escaped.join("|")}))(?=$|[\\s.,!?])`, "gu");
+  return body.split(matcher).map((part, index) =>
+    part.startsWith("@") && names.some((name) => part === `@${name}`) ? (
+      <Text key={`${part}-${index}`} style={styles.mentionHighlight}>
+        {part}
+      </Text>
+    ) : (
+      <Text key={`${part}-${index}`}>{part}</Text>
+    ),
+  );
+}
+
 function GroupScreen({
   group,
   token,
@@ -423,7 +442,6 @@ function GroupScreen({
   const [replyTarget, setReplyTarget] = useState<api.Message | null>(null);
   const [reactionPickerFor, setReactionPickerFor] = useState<number | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
-  const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIds, setMentionIds] = useState<number[]>([]);
   const [olderLoading, setOlderLoading] = useState(false);
   const [showTask, setShowTask] = useState(false);
@@ -731,11 +749,11 @@ function GroupScreen({
     }
   };
   const insertMention = (member: { id: number; name: string }) => {
-    setText((current) => `${current}${current.endsWith(" ") || current === "" ? "" : " "}@${member.name} `);
+    // Thay đúng phần "@query" đang viết dở, không nối thêm vào sau nó.
+    setText((current) => current.replace(/(?:^|\s)@[\p{L}\p{N}_.-]*$/u, (match) => `${match.startsWith(" ") ? " " : ""}@${member.name} `));
     setMentionIds((current) =>
       current.includes(member.id) ? current : [...current, member.id],
     );
-    setMentionOpen(false);
   };
   const removeMessage = async (message: api.Message) => {
     try {
@@ -787,6 +805,20 @@ function GroupScreen({
         Number(readerId) !== user.id && value.messageId >= latestOwnMessageId,
     )
     .map(([, value]) => value.name);
+  // Gõ "@" (hoặc bấm nút @) là danh sách hiện ra ngay trên ô soạn thảo, như
+  // bản web — không cần state bật/tắt riêng vì query rỗng đã khớp mọi người.
+  const mentionQuery = /(?:^|\s)@([\p{L}\p{N}_.-]*)$/u.exec(text)?.[1];
+  const mentionChoices =
+    mentionQuery === undefined
+      ? []
+      : members
+          .filter((person) => person.id !== user.id)
+          .filter((person) =>
+            person.name
+              .toLocaleLowerCase()
+              .includes(mentionQuery.toLocaleLowerCase()),
+          )
+          .slice(0, 5);
   return (
     <SafeAreaView style={styles.appScreen}>
       <View style={styles.innerHeader}>
@@ -937,7 +969,12 @@ function GroupScreen({
                     </View>
                   ) : null}
                   {message.body ? (
-                    <Text style={styles.messageBody}>{message.body}</Text>
+                    <Text style={styles.messageBody}>
+                      {bodyWithMentions(
+                        message.body,
+                        members.map((person) => person.name).filter(Boolean),
+                      )}
+                    </Text>
                   ) : null}
                   {message.image_url ? (
                     <Pressable
@@ -1059,22 +1096,20 @@ function GroupScreen({
               ))}
             </View>
           ) : null}
-          {mentionOpen ? (
+          {mentionChoices.length > 0 ? (
             <View style={styles.popoverColumn}>
-              {members
-                .filter((person) => person.id !== user.id)
-                .map((person) => (
-                  <Pressable
-                    key={person.id}
-                    onPress={() => insertMention(person)}
-                    style={styles.mentionRow}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Nhắc đến ${person.name}`}
-                  >
-                    <Avatar name={person.name} url={person.avatar_url} size={28} />
-                    <Text style={styles.taskTitle}>{person.name}</Text>
-                  </Pressable>
-                ))}
+              {mentionChoices.map((person) => (
+                <Pressable
+                  key={person.id}
+                  onPress={() => insertMention(person)}
+                  style={styles.mentionRow}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Nhắc đến ${person.name}`}
+                >
+                  <Avatar name={person.name} url={person.avatar_url} size={28} />
+                  <Text style={styles.taskTitle}>{person.name}</Text>
+                </Pressable>
+              ))}
             </View>
           ) : null}
           <View style={styles.composerTools}>
@@ -1088,10 +1123,7 @@ function GroupScreen({
               <Text style={styles.attachText}>{picking ? "…" : "Ảnh"}</Text>
             </Pressable>
             <Pressable
-              onPress={() => {
-                setEmojiOpen((open) => !open);
-                setMentionOpen(false);
-              }}
+              onPress={() => setEmojiOpen((open) => !open)}
               style={styles.attach}
               accessibilityRole="button"
               accessibilityLabel="Chọn emoji"
@@ -1099,10 +1131,13 @@ function GroupScreen({
               <Text style={styles.attachText}>Emoji</Text>
             </Pressable>
             <Pressable
-              onPress={() => {
-                setMentionOpen((open) => !open);
-                setEmojiOpen(false);
-              }}
+              onPress={() =>
+                setText((current) =>
+                  /@[\p{L}\p{N}_.-]*$/u.test(current)
+                    ? current
+                    : `${current}${current === "" || /\s$/u.test(current) ? "" : " "}@`,
+                )
+              }
               style={styles.attach}
               accessibilityRole="button"
               accessibilityLabel="Nhắc đến thành viên"
@@ -2195,6 +2230,7 @@ const styles = StyleSheet.create({
   },
   popoverColumn: { gap: 2, paddingHorizontal: 14, paddingBottom: 8 },
   mentionRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 6 },
+  mentionHighlight: { color: C.cyan, fontWeight: "700" },
   reactionChip: { fontSize: 20, paddingHorizontal: 4 },
   reactionRow: { flexDirection: "row", flexWrap: "wrap", gap: 2, marginTop: 6 },
   olderButton: { alignSelf: "center", paddingVertical: 8 },
