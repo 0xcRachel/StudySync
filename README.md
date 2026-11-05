@@ -273,12 +273,12 @@ Vòng trạng thái và tính nhất quán: UI đổi ngay (optimistic) → gọ
 
 - React Navigation: bottom tabs *Nhóm / Bạn bè / Thông báo / Hồ sơ* + native stack cho màn hình nhóm.
 - Phiên lưu trong AsyncStorage và được tái khám bằng `/me.php` khi mở app; tắt app không mất đăng nhập.
-- Tab nhóm có *Công việc / Chat / Thành viên*: tạo và giao việc, đổi trạng thái, nhắn tin, cảm xúc, sửa/xoá tin, **chọn và xem ảnh** (chạm ảnh để mở toàn màn hình), chỉ báo kết nối, "đang nhập".
+- Tab nhóm có *Công việc / Chat / Thành viên*: tạo và giao việc, đổi trạng thái, nhắn tin, **chọn và xem ảnh** (chạm ảnh để mở toàn màn hình), thả một trong mười cảm xúc như bản web, trả lời kèm trích dẫn tin gốc, nhắc tên `@`, chèn emoji, sửa/xoá tin, tải tin cũ, chỉ báo kết nối, "đang nhập" và "đã đọc".
 - **Thông báo cục bộ** khi tin nhắn tới lúc đang ở tab khác hoặc app chạy nền.
 - Banner "Không có kết nối" khi mất Wi-Fi (NetInfo); dữ liệu đã tải vẫn hiển thị.
 - Pull-to-refresh ở mọi danh sách; lỗi refresh không xoá dữ liệu đang có.
 
-Chat bản điện thoại còn đơn giản hơn bản web: chưa có trả lời, nhắc tên, bảng cảm xúc đầy đủ và bình luận công việc (xem §12).
+Hai bản chênh nhau còn ở **bình luận công việc** (mới có trên web) và **tour hướng dẫn Driver.js** (chỉ web). Bản điện thoại cũng chưa có phân cách ngày giữa các bundle tin.
 
 ---
 
@@ -392,6 +392,6 @@ Kết quả đạt gần nhất (2026-11-05):
 - **Push remote (APNs/FCM)**: cần Apple Developer profile + development build/EAS. Trên Expo Go ứng dụng chỉ gửi *thông báo cục bộ*; tin đến khi app đã bị kill sẽ không đánh thức máy.
 - **Hàng đợi ghi khi offline**: mất mạng là chỉ đọc được dữ liệu đã tải, không có queued write rồi đồng bộ lại.
 - **Chat 1-1 ngoài nhóm**: bảng `messages` có `receiver_id` và schema đã hỗ trợ, nhưng cả hai frontend đều chưa mở màn hình này.
-- **Bản điện thoại chưa bằng bản web ở phần chat**: thiếu trả lời, nhắc tên, bảng cảm xúc, bình luận công việc và tải tin cũ.
+- **Bản điện thoại chưa có bình luận công việc** và chưa vẽ phân cách ngày trong chat; phần nhắn tin (ảnh, cảm xúc, trả lời, nhắc tên, đã đọc, tải tin cũ) đã tương đương bản web.
 - **Không có rate limit, audit log, quản trị viên hệ thống**: không nên deploy công khai nguyên trạng; API mở chỉ phù hợp demo trong mạng nội bộ.
 - **Múi giờ**: MySQL ghi theo múi máy chủ (+07 trên máy phát triển) còn PHP chạy UTC, nên client đọc chuỗi "giờ máy chủ" như giờ của máy người dùng. Hai máy phải cùng múi, hoặc backend phải trả UTC kèm offset.
