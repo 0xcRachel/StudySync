@@ -261,6 +261,7 @@ Frontend phân loại lỗi mạng, timeout, HTTP, JSON sai cú pháp và hiển
 
 - **Landing**: đăng nhập/đăng ký trong `AuthSheet`; phiên lưu ở `sessionStorage`, tour Driver.js mở lại được.
 - **Home**: danh sách nhóm kèm số việc đã xong, tạo nhóm, **trung tâm thông báo** (chuông + popover) gộp thông báo và lời mời nhóm; chấp nhận/từ chối ngay trong popover.
+- **Badge chưa đọc trên sidebar** (kiểu Discord): pill xanh ở mép trái phồng lên khi rê, tên đậm, số xám cho tin chưa đọc và số đỏ khi có người nhắc tên. Số tăng trong ~1 giây nhờ WebSocket báo trên socket tài khoản (không phụ thuộc việc nhóm đó có đang mở phòng chat hay không), và về 0 ngay khi mốc đọc được gửi lúc mở tab Thảo luận. Vào một nhóm đã có tin nhắn thì lịch sử tính là đã đọc, nên thành viên mới không thấy badge đếm từ trước khi họ tham gia.
 - **Màn nhóm**, ba tab:
   - *Công việc*: lọc theo trạng thái, tạo + giao việc, bấm tròn trạng thái để quay vòng `Cần làm → Đang làm → Xong`, **đổi tên inline** (Enter lưu, Esc huỷ), **xoá** bằng hai lần bấm kèm rollback khi API lỗi, **bình luận** tải về khi mở ngăn kéo.
   - *Chat*: bong bóng hai bên (tin của mình bên phải), phân cách theo ngày, gom tin liên tiếp cùng người gửi, cảm xúc, trả lời, nhắc tên `@`, sửa/xoá, gửi ảnh (tin chỉ-ảnh không kèm chữ), chỉ báo "đang nhập", xác nhận đã đọc, nút tải thêm tin cũ mà không nhảy cuộn. Danh sách tin là vùng cuộn duy nhất; ô soạn thảo cao cố định, không trôi khi gõ.
@@ -329,6 +330,7 @@ npx expo-doctor
 Kết quả đạt gần nhất (2026-11-05):
 
 - `npm run test:api`: **25/25** — đăng ký, quyền riêng tư giữa hai tài khoản, tạo nhóm trùng tên độc lập, validation task, task khác nhóm phải 404, reaction/sửa/xoá tin nhắn, CORS và chặn file nội bộ.
+- `npm run test:realtime`: đạt — gồm hai ca mới cho badge chưa đọc: vào nhóm đã có tin nhắn thì `unread_count = 0`, và tin kế tiếp được đẩy qua socket tài khoản cho người **không** mở phòng nhóm đó (người đang xem thì không nhận).
 - `npm run typecheck` và `npm run lint`: không lỗi, không cảnh báo.
 - Bundle iOS build qua Metro thành công (`index.bundle?platform=ios`, không lỗi module).
 - Kiểm chứng thủ công trên trình duyệt với backend MySQL thật: gửi tin không giật cuộn; ảnh chỉ-ảnh không kèm chữ; reaction không gộp emoji; đổi tên task giữ nguyên trạng thái; xoá task có rollback; bình luận tải khi mở ngăn kéo; *Xoá nhóm* chỉ chủ nhóm bấm được và quay về danh sách; mốc giờ của tin vừa gửi khớp đồng hồ máy.
