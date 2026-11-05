@@ -88,7 +88,7 @@ function sameMoment(a?: string | null, b?: string | null): boolean {
   return Boolean(a && b) && dayKey(a) === dayKey(b);
 }
 
-function ChatImage({ url, token }: { url: string; token: string }) {
+function ChatImage({ url, token, onLoaded }: { url: string; token: string; onLoaded: () => void }) {
   const [src, setSrc] = useState('');
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -101,7 +101,13 @@ function ChatImage({ url, token }: { url: string; token: string }) {
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [url, token]);
   if (failed) return <span className="chat-image-error">Ảnh hiện không tải được.</span>;
-  return src ? <a className="chat-image-link" href={src} target="_blank" rel="noreferrer"><img className="chat-image" src={src} alt="Ảnh được gửi trong cuộc trò chuyện" loading="lazy" /></a> : <span className="chat-image-loading">Đang tải ảnh…</span>;
+  return src ? (
+    <a className="chat-image-link" href={src} target="_blank" rel="noreferrer">
+      <img className="chat-image" src={src} alt="Ảnh được gửi trong cuộc trò chuyện" loading="lazy" onLoad={onLoaded} />
+    </a>
+  ) : (
+    <span className="chat-image-loading">Đang tải ảnh…</span>
+  );
 }
 
 export function GroupScreen({
@@ -231,6 +237,19 @@ export function GroupScreen({
 
   const stickToBottom = useRef(true);
   const scrolledToMessageId = useRef(-1);
+
+  /**
+   * Ảnh tải xong SAU khi layout effect đã cuộn xuống đáy: chỗ trống ban đầu
+   * chỉ là dòng "Đang tải ảnh…" ~18px, nên khi ảnh 420px xuất hiện, tin cuối
+   * bị đẩy tụt xuống dưới mép cắt của danh sách — trông như bị ô soạn thảo
+   * che mất. Dán lại đáy khi media sẵn sàng, nhưng chỉ khi người đọc đang ở
+   * đáy để không kéo ai đang đọc sửng về cuối.
+   */
+  const restickAfterMedia = useCallback(() => {
+    if (!stickToBottom.current) return;
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
 
   // Sự kiện scroll của phần tử không nổi lên window nên phải gắn trực tiếp.
   useEffect(() => {
@@ -925,7 +944,7 @@ export function GroupScreen({
                         <div className={message.body || message.reply_to ? 'msg-bubble' : 'msg-bubble media-only'}>
                           {message.reply_to ? <div className="msg-reply-quote"><Avatar name={message.reply_to.sender_name} url={message.reply_to.avatar_url} size={18} /><span><strong>{message.reply_to.sender_name}</strong><span className="reply-preview">{message.reply_to.body || '[Ảnh]'}</span></span></div> : null}
                           {editingMessageId === message.id ? <div className="message-edit"><textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} maxLength={4000} autoFocus /><div><button type="button" className="btn-quiet" onClick={() => setEditingMessageId(null)}>Huỷ</button><button type="button" className="btn btn-sm" onClick={() => void saveEditedMessage(message)}>Lưu</button></div></div> : message.body ? <p className="msg-body">{renderBody(message.body)}</p> : null}
-                          {message.image_url ? <ChatImage url={message.image_url} token={token} /> : null}
+                          {message.image_url ? <ChatImage url={message.image_url} token={token} onLoaded={restickAfterMedia} /> : null}
                         </div>
                       ) : null}
                       {message.reactions?.length ? <div className="msg-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction.emoji} className={reaction.reacted ? 'msg-reaction active' : 'msg-reaction'} aria-pressed={reaction.reacted} onClick={() => void reactToMessage(message, reaction.emoji)}>{reaction.emoji}<span>{reaction.count}</span></button>)}</div> : null}
