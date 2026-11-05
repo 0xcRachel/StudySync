@@ -920,33 +920,38 @@ textarea.field {
   position: relative;
   z-index: 15;
   display: block;
-  padding: 10px;
-  background: rgba(247,248,243,.97);
+  padding: 7px;
+  background: var(--surface);
   border: 1px solid var(--line-2);
-  border-radius: 17px;
-  box-shadow: 0 14px 38px rgba(21,23,26,.09), 0 2px 6px rgba(21,23,26,.035);
-  margin: 6px 0 6px;
-  backdrop-filter: blur(14px);
+  border-radius: 16px;
+  box-shadow: 0 10px 26px rgba(21,23,26,.07), 0 1px 3px rgba(21,23,26,.03);
+  margin: 6px 0 10px;
 }
-.chat-compose-row { display: flex; align-items: flex-end; gap: 8px; }
+/* Một hàng duy nhất, như Telegram/Slack: công cụ trái — ô nhập giữa — gửi phải.
+   Hàng hint riêng từng chiếm thêm ~26px và đẩy emoji/quà xuống dòng dưới,
+   tạo khoảng chết giữa thẻ. Phím tắt giờ nằm trong title/aria-keyshortcuts. */
+.chat-compose-row { display: flex; align-items: center; gap: 6px; }
+.chat-tools { display: flex; align-items: center; gap: 2px; flex: none; }
 .chat-text-wrap { position: relative; min-width: 0; flex: 1; }
 /* Chiều cao ô nhập là CỐ ĐỊNH, text dài thì cuộn bên trong. Nếu cho nó tự giãn
    thì nó là flex sibling nên sẽ hút chiều cao của .chat: gõ 4 dòng từng làm danh
    sách tin co từ 90px xuống 43px và cả khung chat bị đẩy lên 47px. */
-.chat-textarea { display: block; width: 100%; height: 54px; min-height: 54px; max-height: 54px; overflow-y: auto; resize: none; border: 0; outline: 0; padding: 8px 12px 4px; background: transparent; color: var(--ink); font: inherit; line-height: 1.5; }
+.chat-textarea { display: block; width: 100%; height: 38px; min-height: 38px; max-height: 38px; overflow-y: auto; resize: none; border: 0; outline: 0; padding: 8px 10px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; line-height: 1.45; }
 .chat-textarea::placeholder { color: var(--ink-3); }
-.chat-tool, .chat-send { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 11px; color: var(--ink-2); transition: background .15s ease, color .15s ease, transform .15s ease; }
-.chat-tool:hover { background: var(--sunk); color: var(--ink); }
+.chat-tool, .chat-send { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 11px; color: var(--ink-2); transition: background .15s ease, color .15s ease, transform .15s ease; }
+.chat-tool:hover { background: var(--wash); color: var(--pine); }
 .chat-tool:disabled { opacity: .45; }
-.chat-send { background: var(--pine); color: #f4f6f1; box-shadow: 0 5px 12px rgba(22,72,59,.2); }
+.chat-send { background: var(--pine); color: #f4f6f1; box-shadow: 0 4px 10px rgba(22,72,59,.18); }
 .chat-send:hover:not(:disabled) { background: var(--pine-deep); transform: translateY(-1px); }
 .chat-send:disabled { opacity: .42; }
 .send-dots { font-size: 20px; line-height: 1; color: #f4f6f1; }
 .icon { display: block; flex: none; }
-.chat-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 0 5px 1px 12px; color: var(--ink-3); font-size: 10px; }
-.chat-tools-popovers { display: flex; align-items: center; gap: 2px; }
 .chat-popover-anchor { position: relative; }
 .emoji-menu, .gift-menu, .mention-menu { position: absolute; z-index: 35; bottom: calc(100% + 8px); padding: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 12px 35px rgba(21,23,26,.15); }
+/* Cụm công cụ đã chuyển sang mép trái của thẻ, nên menu phải mở sang phải.
+   Neo right:0 như cũ sẽ khiến anchor bên trái đẩy menu tràn khỏi màn hình
+   (đo được x = -95px trên viewport 683px). */
+.chat-tools .emoji-menu, .chat-tools .gift-menu { left: 0; right: auto; }
 .emoji-menu { right: 0; display: grid; grid-template-columns: repeat(6, 36px); gap: 3px; padding: 9px; border-radius: 14px; }
 .emoji-menu button { height: 34px; border-radius: 7px; font-size: 20px; }
 .emoji-menu button:hover, .gift-menu button:hover, .mention-option:hover { background: var(--sunk); }
@@ -1345,8 +1350,7 @@ textarea.field {
   .msg-head { gap: 6px; margin: 0 3px 3px; }
   .msg-actions { gap: 2px; }
   .msg-action { width: 26px; height: 24px; }
-  .chat-form { padding: 7px; border-radius: 15px; }
-  .chat-toolbar > span { max-width: 57%; line-height: 1.25; }
+  .chat-form { padding: 6px; border-radius: 15px; }
   .chat-tool { width: 34px; height: 34px; }
   .chat-send { width: 36px; height: 36px; }
   .emoji-menu { grid-template-columns: repeat(6, minmax(31px, 1fr)); width: min(252px, calc(100vw - 36px)); }
