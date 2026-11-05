@@ -262,16 +262,16 @@ Frontend phân loại lỗi mạng, timeout, HTTP, JSON sai cú pháp và hiển
 - **Landing**: đăng nhập/đăng ký trong `AuthSheet`; phiên lưu ở `sessionStorage`, tour Driver.js mở lại được.
 - **Home**: danh sách nhóm kèm số việc đã xong, tạo nhóm, **trung tâm thông báo** (chuông + popover) gộp thông báo và lời mời nhóm; chấp nhận/từ chối ngay trong popover.
 - **Badge chưa đọc trên sidebar** (kiểu Discord): pill xanh ở mép trái phồng lên khi rê, tên đậm, số xám cho tin chưa đọc và số đỏ khi có người nhắc tên. Số tăng trong ~1 giây nhờ WebSocket báo trên socket tài khoản (không phụ thuộc việc nhóm đó có đang mở phòng chat hay không), và về 0 ngay khi mốc đọc được gửi lúc mở tab Thảo luận. Vào một nhóm đã có tin nhắn thì lịch sử tính là đã đọc, nên thành viên mới không thấy badge đếm từ trước khi họ tham gia.
-- **Màn nhóm**, ba tab:
-  - *Công việc*: lọc theo trạng thái, tạo + giao việc, bấm tròn trạng thái để quay vòng `Cần làm → Đang làm → Xong`, **đổi tên inline** (Enter lưu, Esc huỷ), **xoá** bằng hai lần bấm kèm rollback khi API lỗi, **bình luận** tải về khi mở ngăn kéo.
-  - *Chat*: bong bóng hai bên (tin của mình bên phải), phân cách theo ngày, gom tin liên tiếp cùng người gửi, cảm xúc, trả lời, nhắc tên `@`, sửa/xoá, gửi ảnh (tin chỉ-ảnh không kèm chữ), chỉ báo "đang nhập", xác nhận đã đọc, nút tải thêm tin cũ mà không nhảy cuộn. Danh sách tin là vùng cuộn duy nhất; ô soạn thảo cao cố định, không trôi khi gõ.
-  - *Thành viên*: vai trò (Chủ nhóm/Quản trị/Thành viên), trạng thái hoạt động, mời nhanh bạn bè, và **Xoá nhóm** chỉ hiện với owner/admin.
+- **Màn nhóm**. Ở desktop (≥1280px) không còn hàng tab: cột trái là **danh sách kênh** của nhóm (`# công việc`, `# thảo-luận`, `Thành viên`), khung giữa có header kênh (tên + chủ đề nhóm + ô tìm tin nhắn), cột phải là **danh sách thành viên** nhóm theo vai trò. Dưới 1280px vẫn dùng ba tab như cũ.
+  - *Công việc*: lọc theo trạng thái, tạo + giao việc, bấm tròn trạng thái để quay vòng `Cần làm → Đang làm → Xong`, **đổi tên inline** (Enter lưu, Esc huỷ), **xoá** bằng hai lần bấm kèm rollback khi API lỗi, **bình luận** tải về khi mở ngăn kéo. Trạng thái là chip có màu, người phụ trách hiện avatar ngay khi chưa rê chuột.
+  - *Thảo luận*: bong bóng hai bên (tin của mình bên phải), phân cách theo ngày, gom tin liên tiếp cùng người gửi, cảm xúc, trả lời, nhắc tên `@`, sửa/xoá, gửi ảnh (tin chỉ-ảnh không kèm chữ), "đang nhập", xác nhận đã đọc, nút tải thêm tin cũ mà không nhảy cuộn. Ô tìm kiếm lọc trong 300 tin đã tải — nói rõ phạm vi này thay vì giả vờ tìm được cả lịch sử.
+  - *Thành viên*: nhóm theo Chủ nhóm / Quản trị / Thành viên, dot presence, người ngoại tuyến nhạt hơn, mời nhanh bạn bè, và **Xoá nhóm** chỉ hiện với owner/admin.
 - **Bạn bè / Thông báo / Hồ sơ**: kết bạn, chấp nhận lời mời, đánh dấu đã đọc, sửa hồ sơ, đổi mật khẩu.
 - **Layout theo khổ màn hình** (một container + CSS, không nhân đôi markup):
-  - ≥1280px — desktop thật: cột chính chứa Công việc/Thảo luận, **danh sách thành viên thành cột phải thường trực** (300px, có trạng thái hoạt động, lời mời và *Xoá nhóm*), tab Thành viên biến mất, bong bóng tin rộng tới 920px, `.page` mở tới 1500px.
-  - 981–1279px — một cột như cũ nhưng có sidebar nhóm.
+  - ≥1280px — desktop thật, ba cột: **danh sách kênh 232px | khung nội dung | thành viên 300px**; bong bóng tin rộng tới 920px, `.page` mở tới 1500px.
+  - 981–1279px — một cột nội dung + sidebar nhóm, điều hướng bằng tab.
   - ≤980px — giao diện điện thoại: ẩn sidebar, hiện header + tab đáy.
-  Ngưỡng 1280px phải khớp giữa `styles.ts` và `useWideLayout` trong `screens/Group.tsx`; phóng to cửa sổ khi đang ở tab Thành viên sẽ tự đưa về Thảo luận vì tab đó không còn.
+  Ngưỡng 1280px phải khớp giữa `styles.ts` và `WIDE_QUERY` trong `screens/Group.tsx`; phóng to cửa sổ khi đang ở tab Thành viên sẽ tự đưa về Thảo luận vì tab đó không còn.
 
 Vòng trạng thái và tính nhất quán: UI đổi ngay (optimistic) → gọi API → khoá nút của item đang gửi → thành công thì đồng bộ object từ response, thất bại thì **rollback** và hiện toast tiếng Việt. Tải lại màn hình sẽ đọc trạng thái thật từ database.
 
