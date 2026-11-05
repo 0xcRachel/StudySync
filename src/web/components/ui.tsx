@@ -51,9 +51,16 @@ export type IconName =
   | 'send'
   | 'image'
   | 'bell'
-  | 'chevron';
+  | 'chevron'
+  | 'at';
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
+  at: (
+    <>
+      <circle cx="10" cy="10" r="3.3" />
+      <path d="M13.3 10v1.3a2.1 2.1 0 0 0 4.2 0V10a7.5 7.5 0 1 0-2.9 5.9" />
+    </>
+  ),
   bell: (
     <>
       <path d="M6.2 8.4a3.8 3.8 0 0 1 7.6 0c0 3.4 1.3 4.6 1.3 4.6H4.9s1.3-1.2 1.3-4.6z" />

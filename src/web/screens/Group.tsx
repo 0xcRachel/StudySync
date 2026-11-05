@@ -155,6 +155,10 @@ export function GroupScreen({
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [olderLoading, setOlderLoading] = useState(false);
   const [hasOlder, setHasOlder] = useState(false);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  // null = chưa ẩn; rỗng '' sẽ đụng đúng query của dấu "@" trần nên không
+  // dùng làm giá trị mặc định được.
+  const [mentionHiddenFor, setMentionHiddenFor] = useState<string | null>(null);
 
   const [inviteQuery, setInviteQuery] = useState('');
   const [results, setResults] = useState<InviteCandidate[]>([]);
@@ -578,9 +582,29 @@ export function GroupScreen({
   useEffect(() => () => { if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl); }, [imagePreviewUrl]);
 
   const mentionQuery = chatDraft.match(/(?:^|\s)@([\p{L}\p{N}_.-]*)$/u)?.[1];
-  const mentionOptions = mentionQuery === undefined ? [] : members
+  const mentionOptions = mentionQuery === undefined || mentionHiddenFor === mentionQuery ? [] : members
     .filter((member) => member.name.toLocaleLowerCase().includes(mentionQuery.toLocaleLowerCase()))
     .slice(0, 5);
+  // Suy ra từ length thay vì reset bằng effect: danh sách đổi theo từng phím
+  // gõ, effect sẽ ghi đè state giữa lúc người dùng đang điều hướng.
+  const activeMention = mentionOptions.length > 0 ? mentionOptions[Math.min(mentionIndex, mentionOptions.length - 1)] : null;
+  /**
+   * Điều hướng bàn phím cho menu nhắc tên — ↑/↓ chọn, Enter/Tab cắm tên, Esc
+   * ẩn cho tới khi người dùng gõ sang truy vấn khác. Không có nó thì Enter gửi
+   * luôn tin nhắn với "@G" còn đang viết dở.
+   */
+  const onMentionKey = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    if (mentionOptions.length === 0) return false;
+    if (event.key === 'ArrowDown') { event.preventDefault(); setMentionIndex((i) => (i + 1) % mentionOptions.length); return true; }
+    if (event.key === 'ArrowUp') { event.preventDefault(); setMentionIndex((i) => (i - 1 + mentionOptions.length) % mentionOptions.length); return true; }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault();
+      if (activeMention) insertMention(activeMention.name);
+      return true;
+    }
+    if (event.key === 'Escape') { event.preventDefault(); setMentionHiddenFor(mentionQuery ?? null); return true; }
+    return false;
+  };
   const insertEmoji = (emoji: string) => {
     setChatDraft((current) => `${current}${emoji}`);
     setEmojiOpen(false);
@@ -588,6 +612,15 @@ export function GroupScreen({
   };
   const insertMention = (name: string) => {
     setChatDraft((current) => current.replace(/(?:^|\s)@[\p{L}\p{N}_.-]*$/u, (match) => `${match.startsWith(' ') ? ' ' : ''}@${name} `));
+    setMentionIndex(0);
+    setMentionHiddenFor(null);
+    chatInputRef.current?.focus();
+  };
+  /** Nút @: cắm dấu @ để mở menu, giữ nguyên phần chữ đang gõ dở. */
+  const startMention = () => {
+    setChatDraft((current) => (/@[\p{L}\p{N}_.-]*$/u.test(current) ? current : `${current}${current === '' || /\s$/u.test(current) ? '' : ' '}@`));
+    setMentionHiddenFor(null);
+    setMentionIndex(0);
     chatInputRef.current?.focus();
   };
   const sendGift = (gift: (typeof CHAT_GIFTS)[number]) => {
@@ -964,12 +997,13 @@ export function GroupScreen({
             <div className="chat-compose-row">
               <div className="chat-tools">
                 <button type="button" className="chat-tool" onClick={() => imageInputRef.current?.click()} disabled={sending} aria-label="Đính kèm ảnh" title="Đính kèm ảnh"><Icon name="image" /></button>
+                <button type="button" className="chat-tool" onClick={startMention} disabled={sending || members.length < 2} aria-label="Nhắc đến thành viên" title="Nhắc đến thành viên (@)"><Icon name="at" /></button>
                 <div className="chat-popover-anchor"><button type="button" className="chat-tool" onClick={() => { setEmojiOpen((open) => !open); setGiftOpen(false); }} aria-label="Chọn emoji" title="Emoji" aria-expanded={emojiOpen}><Icon name="smiley" /></button>{emojiOpen ? <div className="emoji-menu" aria-label="Chọn emoji">{CHAT_EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => insertEmoji(emoji)} aria-label={`Chèn ${emoji}`}>{emoji}</button>)}</div> : null}</div>
                 <div className="chat-popover-anchor"><button type="button" className="chat-tool" onClick={() => { setGiftOpen((open) => !open); setEmojiOpen(false); }} aria-label="Gửi quà" title="Quà tặng" aria-expanded={giftOpen}><Icon name="gift" /></button>{giftOpen ? <div className="gift-menu" aria-label="Chọn quà">{CHAT_GIFTS.map((gift) => <button type="button" key={gift.label} onClick={() => sendGift(gift)}><span>{gift.icon}</span>{gift.label}</button>)}</div> : null}</div>
               </div>
               <div className="chat-text-wrap">
-                <textarea ref={chatInputRef} className="chat-textarea" value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={replyTarget ? `Trả lời ${replyTarget.sender_name}…` : 'Nhắn tin cho nhóm…'} aria-label="Tin nhắn mới" aria-keyshortcuts="Enter Shift+Enter" title="Enter để gửi, Shift+Enter để xuống dòng" maxLength={4000} />
-                {mentionOptions.length > 0 ? <div className="mention-menu" role="listbox" aria-label="Gợi ý thành viên">{mentionOptions.map((member) => <button type="button" key={member.id} role="option" className="mention-option" onClick={() => insertMention(member.name)}><Avatar name={member.name} url={member.avatar_url} size={26} /><span>{member.name}<small>@{member.username ?? member.name.toLocaleLowerCase().replace(/\s+/g, '')}</small></span></button>)}</div> : null}
+                <textarea ref={chatInputRef} className="chat-textarea" value={chatDraft} onChange={(event) => { setChatDraft(event.target.value); setMentionIndex(0); }} onKeyDown={(event) => { if (onMentionKey(event)) return; if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={replyTarget ? `Trả lời ${replyTarget.sender_name}…` : 'Nhắn tin cho nhóm… (@ để nhắc tên)'} aria-label="Tin nhắn mới" aria-keyshortcuts="Enter Shift+Enter" title="Enter để gửi, Shift+Enter để xuống dòng" maxLength={4000} />
+                {mentionOptions.length > 0 ? <div className="mention-menu" role="listbox" aria-label="Gợi ý thành viên">{mentionOptions.map((member) => <button type="button" key={member.id} role="option" aria-selected={member.id === activeMention?.id} className="mention-option" onClick={() => insertMention(member.name)}><Avatar name={member.name} url={member.avatar_url} size={26} /><span>{member.name}<small>@{member.username ?? member.name.toLocaleLowerCase().replace(/\s+/g, '')}</small></span></button>)}</div> : null}
               </div>
               <button type="submit" className="chat-send" disabled={sending || (chatDraft.trim().length === 0 && !selectedImage)} aria-label="Gửi tin nhắn" title="Gửi tin nhắn">{sending ? <span className="send-dots">…</span> : <Icon name="send" size={17} />}</button>
             </div>

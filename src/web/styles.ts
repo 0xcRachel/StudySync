@@ -960,6 +960,8 @@ textarea.field {
 .gift-menu button span { font-size: 20px; }
 .mention-menu { left: 0; display: grid; gap: 2px; width: min(300px, 100%); }
 .mention-option { display: flex; align-items: center; gap: 9px; padding: 7px; border-radius: 8px; text-align: left; }
+.mention-option:hover, .mention-option[aria-selected='true'] { background: var(--wash); }
+.mention-option[aria-selected='true'] { color: var(--pine); box-shadow: inset 0 0 0 1px #a8bcae; }
 .mention-option span { display: grid; font-size: 12px; }
 .mention-option small { color: var(--ink-3); font-size: 10px; }
 .chat-compose-context, .chat-image-preview { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 8px; padding: 9px 11px; color: var(--ink-2); font-size: 12px; background: rgba(230,232,225,.7); border-left: 3px solid var(--pine); border-radius: 0 9px 9px 0; overflow-wrap: anywhere; }
