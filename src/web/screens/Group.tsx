@@ -116,6 +116,35 @@ function ChatImage({ url, token, onLoaded }: { url: string; token: string; onLoa
  */
 const WIDE_QUERY = '(min-width: 1280px)';
 
+/**
+ * Skeleton riêng cho khung chat: mấy thanh ngang chung của danh sách việc
+ * không cho biết gì về tin nhắn sắp hiện, còn hình bong bóng thì có — người
+ * đọc thấy ngay tin của mình bên phải, tin người khác bên trái.
+ */
+function ChatSkeleton() {
+  const rows = [
+    { side: 'left', width: 214 },
+    { side: 'left', width: 128 },
+    { side: 'right', width: 172 },
+    { side: 'left', width: 268 },
+    { side: 'right', width: 96 },
+  ];
+  return (
+    <>
+      <p className="sr-only" role="status">Đang tải tin nhắn…</p>
+      <div className="chat chat-skeleton" aria-hidden="true">
+        {rows.map((row, index) => (
+          <div className={row.side === 'right' ? 'sk-msg right' : 'sk-msg'} key={index}>
+            {row.side === 'left' ? <span className="sk sk-avatar" /> : null}
+            <span className="sk sk-bubble" style={{ width: row.width }} />
+            {row.side === 'right' ? <span className="sk sk-avatar" /> : null}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export function GroupScreen({
   group,
   groupId,
@@ -1061,7 +1090,7 @@ export function GroupScreen({
             {realtimeStatus === 'connected' ? <span className="chat-live-count">{Math.max(onlineUserIds.length - (onlineUserIds.includes(user.id) ? 1 : 0), 0)} thành viên khác đang trực tuyến</span> : null}
           </div>
           {loading ? (
-            <SkeletonRows rows={3} />
+            <ChatSkeleton />
           ) : error ? null : messages.length === 0 ? (
             <EmptyState title="Chưa có tin nhắn nào.">
               Mở đầu bằng một câu ngắn: hôm nay nhóm làm gì, ai cần gì.
@@ -1208,12 +1237,16 @@ export function GroupScreen({
 
           {canInvite ? (
             <>
-              <div className="shead">
-                <h2 className="h2">Mời vào nhóm</h2>
-              </div>
-              <p className="small muted" style={{ marginBottom: 10 }}>
-                Mời nhanh người đã kết bạn, không cần nhập lại tên hay email.
-              </p>
+              {/* Lời mời là việc thỉnh thoảng mới dùng, đừng chiếm nửa cột phải
+                  của người đang xem danh sách thành viên. */}
+              <details className="side-fold">
+                <summary>
+                  <span className="side-fold-title">Mời vào nhóm</span>
+                  <span className="side-fold-count">{inviteCandidates.filter((person) => !person.invited).length}</span>
+                </summary>
+                <p className="small muted" style={{ marginBottom: 10 }}>
+                  Mời nhanh người đã kết bạn, không cần nhập lại tên hay email.
+                </p>
               <div className="friend-invite-list">
                 {inviteLoading ? <span className="micro faint">Đang tải danh sách bạn bè…</span> : inviteCandidates.length === 0 ? <span className="micro faint">Tất cả bạn bè của bạn đã ở trong nhóm hoặc chưa có bạn bè để mời.</span> : inviteCandidates.map((person) => (
                   <div className="friend-invite" key={person.id}>
@@ -1250,6 +1283,7 @@ export function GroupScreen({
                   </button>
                 </div>
               ))}
+              </details>
 
               <div className="danger-zone">
                 <div>

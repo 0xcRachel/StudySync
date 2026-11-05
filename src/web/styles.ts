@@ -23,7 +23,7 @@ export const CSS = `
   --pine-deep: #0e3328;
   --wash: #dfe8e1;
   --danger: #8e3223;
-  --rail: 248px;
+  --rail: 208px;
   --pad: clamp(20px, 4vw, 64px);
   --sans: 'Onest', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --quote: 'Newsreader', Georgia, 'Times New Roman', serif;
@@ -473,7 +473,7 @@ textarea.field {
   min-height: 100vh;
   width: auto;
   border-right: 1px solid var(--line);
-  padding: 26px 20px 22px;
+  padding: 20px 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -481,8 +481,8 @@ textarea.field {
   background: var(--paper);
 }
 
-.rail-brand { margin-bottom: 34px; padding-left: 2px; }
-.rail-section { margin-bottom: 26px; }
+.rail-brand { margin-bottom: 22px; padding-left: 2px; }
+.rail-section { margin-bottom: 18px; }
 .rail-groups {
   flex: none;
   min-height: 0;
@@ -587,7 +587,7 @@ textarea.field {
 .rail-item:hover .icon { color: var(--ink-2); }
 .rail-item.active { color: var(--ink); background: var(--surface); font-weight: 500; }
 .rail-item.active .icon { color: var(--pine); }
-.rail-foot { margin-top: auto; padding-top: 18px; border-top: 1px solid var(--line); }
+.rail-foot { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); }
 .rail-user { display: flex; align-items: center; gap: 10px; }
 .rail-user .avatar { width: 28px; height: 28px; }
 .rail-user-name { font-size: 13px; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -856,7 +856,21 @@ textarea.field {
    khi được bấm lần hai — đây là thao tác không hoàn tác. */
 .danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 18px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 13px; }
 .danger-title { font-size: 12.5px; font-weight: 600; color: var(--ink); }
-.danger-hint { margin: 3px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--ink-3); }
+.danger-hint { margin: 3px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--ink-3); max-width: 34ch; }
+/* Cột phải hẹp nên dòng giải thích "mất theo… Không hoàn tác được" chiếm 3 dòng
+   chữ thường trực. Nó chỉ cần lúc bấm, nên hiện khi rê/focus; touch thì giữ. */
+.danger-zone .danger-hint { opacity: 0; transition: opacity .14s ease; }
+.danger-zone:hover .danger-hint, .danger-zone:focus-within .danger-hint { opacity: 1; }
+@media (hover: none), (pointer: coarse) { .danger-zone .danger-hint { opacity: 1; } }
+
+/* Ngăn lời mời gập lại mặc định trong cột thành viên. */
+.side-fold { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 10px; }
+.side-fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; list-style: none; padding: 4px 0; }
+.side-fold > summary::-webkit-details-marker { display: none; }
+.side-fold-title { font-size: 12px; font-weight: 600; letter-spacing: -.01em; color: var(--ink-2); }
+.side-fold:hover > summary .side-fold-title, .side-fold[open] > summary .side-fold-title { color: var(--pine); }
+.side-fold-count { font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.side-fold[open] > summary { margin-bottom: 8px; border-bottom: 1px solid var(--line); }
 .btn-danger-quiet { border: 1px solid var(--line-2); background: transparent; color: var(--ink-3); white-space: nowrap; }
 .btn-danger-quiet:hover { border-color: rgba(142,50,35,.45); color: var(--danger); background: rgba(142,50,35,.05); }
 .btn-danger { border: 1px solid var(--danger); background: var(--danger); color: #f6efe9; white-space: nowrap; }
@@ -879,12 +893,15 @@ textarea.field {
    Chrome của trang chat cũng phải thắt lại: padding + header + tab + livebar +
    composer từng ngốn 429/459px, khiến danh sách tin chỉ còn 30px. */
 .main:has(#panel-chat) { overflow: hidden; }
-.page:has(#panel-chat) { padding-top: 10px; padding-bottom: 0; overflow: hidden; }
+/* padding-top KHÔNG đổi theo kênh nữa: 10px ở Thảo-luận so với 68px ở kênh
+   khác làm cả trang — gồm cột kênh và cột thành viên — nhảy lên khi chuyển
+   tab. Chiều cao lấy lại từ livebar và composer, không từ padding trang. */
+.page:has(#panel-chat) { padding-bottom: 0; overflow: hidden; }
 .page:has(#panel-chat) .back { margin-bottom: 10px; }
 .page:has(#panel-chat) .phead { margin-bottom: 14px; }
 .page:has(#panel-chat) .tabs { margin-bottom: 10px; }
 #panel-chat { position: relative; isolation: isolate; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.chat-livebar { flex: none; position: relative; z-index: 12; display: flex; align-items: center; gap: 9px; min-height: 46px; margin: 0 0 8px; padding: 0 14px; color: var(--ink-2); font-size: 11px; background: rgba(247,248,243,.94); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 5px 18px rgba(21,23,26,.035); backdrop-filter: blur(12px); }
+.chat-livebar { flex: none; position: relative; z-index: 12; display: flex; align-items: center; gap: 9px; min-height: 36px; margin: 0 0 6px; padding: 0 12px; color: var(--ink-2); font-size: 11px; background: rgba(247,248,243,.94); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 5px 18px rgba(21,23,26,.035); backdrop-filter: blur(12px); }
 .chat-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #d4a044; box-shadow: 0 0 0 3px rgba(212,160,68,.12); }
 .chat-live-dot.connected { background: #3b9b73; box-shadow: 0 0 0 3px rgba(59,155,115,.12); }
 .chat-live-dot.reconnecting { background: #d4a044; }
@@ -1079,6 +1096,16 @@ textarea.field {
 #panel-members .member.role-owner .member-name { color: var(--pine); font-weight: 600; }
 #panel-members .member.role-admin .member-name { color: var(--ink); font-weight: 600; }
 #panel-members .member-sub { margin-top: 1px; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Chi tiết chỉ hiện khi để chuột trên hàng — presence đã có dot, nên dòng
+   "Đang hoạt động / @username" là thông tin phụ. Vẫn CHỖ cho nó (chỉ đổi
+   opacity) để hàng không nhảy khi rê chuột qua lại. focus-within giữ nó hiện
+   cho bàn phím, và trên cảm ứng (không hover) thì luôn hiện. */
+#panel-members .member .member-sub { opacity: 0; transition: opacity .14s ease; }
+#panel-members .member:hover .member-sub,
+#panel-members .member:focus-within .member-sub { opacity: 1; }
+@media (hover: none), (pointer: coarse) {
+  #panel-members .member .member-sub { opacity: 1; }
+}
 .member-group { margin-bottom: 8px; }
 .member-section { display: flex; align-items: center; gap: 6px; margin: 14px 8px 5px; font-size: 10px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-3); }
 .member-section-count { letter-spacing: 0; font-variant-numeric: tabular-nums; }
@@ -1177,6 +1204,12 @@ textarea.field {
 .empty .btn { margin-top: 10px; }
 
 .sk { background: var(--sunk); border-radius: 3px; animation: skpulse 1.6s ease-in-out infinite; }
+/* Skeleton tin nhắn lấy đúng hình hài bong bóng để khung chat không đổi cỡ
+   khi tin thật thay chỗ nó. */
+.sk-msg { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 14px; }
+.sk-msg.right { justify-content: flex-end; }
+.sk-avatar { flex: none; width: 34px; height: 34px; border-radius: 50%; }
+.sk-bubble { height: 42px; border-radius: 14px; max-width: 78%; }
 @keyframes skpulse { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
 .sk-row { display: grid; grid-template-columns: 26px 1fr 60px; gap: 14px; align-items: center; padding: 17px 0; border-bottom: 1px solid var(--line); }
 
@@ -1219,7 +1252,7 @@ textarea.field {
 .oauth-note { margin: -5px 0 0; color: var(--ink-3); font-size: 11px; line-height: 1.45; }
 
 /* ---------- Trung tâm thông báo ---------- */
-.rail-brand { margin-bottom: 34px; padding-left: 2px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rail-brand { margin-bottom: 22px; padding-left: 2px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .mhead-actions { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .notif-center { position: relative; }
 .notif-bell {
