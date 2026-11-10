@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
 import type { Driver } from 'driver.js';
 import * as api from './lib/api';
-import type { Group, Notification, User } from './lib/api';
+import type { Group, GroupAvatarInput, InviteCandidate, Notification, User } from './lib/api';
 import { clearSession, readSession, updateStoredUser, writeSession } from './lib/session';
 import type { Session } from './lib/session';
 import { HOME, parseHash, routeKey, routeToHash } from './lib/routing';
@@ -13,20 +14,30 @@ import { CSS, FONT_HREF } from './styles';
 import { ToastProvider, useToast } from './components/Toast';
 import { useUserRealtime } from '../lib/useUserRealtime';
 import type { UnreadSignal } from '../lib/useUserRealtime';
-import { MobileHead, Rail, TabBar } from './components/Rail';
-import { Brand, EmptyState } from './components/ui';
+import { Rail } from './components/Rail';
+import { Avatar, Brand, EmptyState, Icon } from './components/ui';
 import { Landing } from './screens/Landing';
 import { Home } from './screens/Home';
 import { GroupScreen } from './screens/Group';
 import { Friends } from './screens/Friends';
 import { Notifications } from './screens/Notifications';
 import { Profile } from './screens/Profile';
-import { firstName } from './lib/format';
+import { firstName, initials } from './lib/format';
 import 'driver.js/dist/driver.css';
 
 type ApiState = 'checking' | 'ok' | 'down';
+type Theme = 'dark' | 'light';
 
-const TITLE = 'StudySync — biết việc gì đang chờ';
+const TITLE = 'StudySync — Hệ điều hành học tập nhóm';
+
+function readTheme(): Theme {
+  if (typeof window === 'undefined') return 'dark';
+  try {
+    const saved = window.localStorage.getItem('studysync.theme');
+    if (saved === 'light' || saved === 'dark') return saved;
+  } catch { /* ignore */ }
+  return 'dark';
+}
 
 function consumeOAuthRedirect(): Session | null {
   if (typeof window === 'undefined') return null;
@@ -54,12 +65,6 @@ function consumeOAuthRedirect(): Session | null {
   return null;
 }
 
-/**
- * CSS là một chuỗi nhúng vào <style> tự tạo, nên Fast Refresh chỉ đổi nó khi
- * effect chạy lại. Để deps rỗng thì sửa styles.ts một mình sẽ giữ nguyên CSS
- * cũ trong khi JSX đã đổi — giao diện thành nửa mới nửa cũ cho tới khi reload
- * cả trang. Depend vào CSS và cập nhật đúng node đó là hết.
- */
 function useDesignSystem(): void {
   useEffect(() => {
     const id = 'studysync-design-system';
@@ -75,7 +80,6 @@ function useDesignSystem(): void {
   }, [CSS]);
 }
 
-/** Font, mô tả, title, ngôn ngữ: gắn một lần khi web app khởi động. */
 function useDocumentChrome(): void {
   useEffect(() => {
     const nodes: HTMLElement[] = [];
@@ -118,8 +122,741 @@ function useDocumentChrome(): void {
 function Boot() {
   return (
     <div className="boot">
-      <Brand />
-      <p className="micro faint">Đang mở không gian học tập…</p>
+      <Brand subtitle="OS 2.4" />
+      <p className="micro faint">Đang khởi tạo không gian làm việc…</p>
+    </div>
+  );
+}
+
+type CommandItem = {
+  id: string;
+  label: string;
+  meta: string;
+  icon: 'home' | 'users' | 'bell' | 'user' | 'plus' | 'sun' | 'moon' | 'help' | 'layers';
+  action: () => void;
+};
+
+function CommandPalette({
+  open,
+  groups,
+  theme,
+  onClose,
+  onNavigate,
+  onNewGroup,
+  onToggleTheme,
+  onStartTour,
+}: {
+  open: boolean;
+  groups: Group[];
+  theme: Theme;
+  onClose: () => void;
+  onNavigate: (route: Route) => void;
+  onNewGroup: () => void;
+  onToggleTheme: () => void;
+  onStartTour: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [lastOpen, setLastOpen] = useState(open);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  if (open !== lastOpen) {
+    setLastOpen(open);
+    if (open) {
+      setQuery('');
+      setActiveIndex(0);
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const id = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(id);
+  }, [open]);
+
+  const items = useMemo<CommandItem[]>(() => {
+    const base: CommandItem[] = [
+      {
+        id: 'nav-home',
+        label: 'Tổng quan không gian làm việc',
+        meta: 'Điều hướng · G H',
+        icon: 'home',
+        action: () => onNavigate(HOME),
+      },
+      {
+        id: 'act-new-group',
+        label: 'Tạo nhóm học tập mới',
+        meta: 'Thao tác nhanh · C',
+        icon: 'plus',
+        action: () => onNewGroup(),
+      },
+      {
+        id: 'nav-friends',
+        label: 'Danh bạ bạn bè & kết nối',
+        meta: 'Điều hướng · G F',
+        icon: 'users',
+        action: () => onNavigate({ name: 'friends' }),
+      },
+      {
+        id: 'nav-notifications',
+        label: 'Trung tâm thông báo & lời mời',
+        meta: 'Điều hướng · G N',
+        icon: 'bell',
+        action: () => onNavigate({ name: 'notifications' }),
+      },
+      {
+        id: 'nav-profile',
+        label: 'Hồ sơ cá nhân & bảo mật',
+        meta: 'Điều hướng · G P',
+        icon: 'user',
+        action: () => onNavigate({ name: 'profile' }),
+      },
+      {
+        id: 'act-theme',
+        label: theme === 'dark' ? 'Chuyển sang giao diện Sáng (Alabaster)' : 'Chuyển sang giao diện Tối (Obsidian)',
+        meta: 'Giao diện',
+        icon: theme === 'dark' ? 'sun' : 'moon',
+        action: () => onToggleTheme(),
+      },
+      {
+        id: 'act-tour',
+        label: 'Chạy lại hướng dẫn sử dụng',
+        meta: 'Trợ giúp',
+        icon: 'help',
+        action: () => onStartTour(),
+      },
+    ];
+
+    const groupItems: CommandItem[] = groups.map((group) => ({
+      id: `group-${group.id}`,
+      label: group.name,
+      meta: `Nhóm · ${group.completed_count}/${group.task_count} việc đã xong`,
+      icon: 'layers',
+      action: () => onNavigate({ name: 'group', groupId: group.id }),
+    }));
+
+    const all = [...groupItems, ...base];
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle) return all;
+    return all.filter(
+      (item) =>
+        item.label.toLocaleLowerCase().includes(needle) ||
+        item.meta.toLocaleLowerCase().includes(needle),
+    );
+  }, [groups, theme, query, onNavigate, onNewGroup, onToggleTheme, onStartTour]);
+
+  if (!open) return null;
+
+  const safeIndex = items.length > 0 ? Math.min(activeIndex, items.length - 1) : 0;
+
+  return (
+    <div className="cmd-backdrop" onClick={onClose} role="presentation">
+      <div
+        className="cmd-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Bảng lệnh nhanh"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            onClose();
+            return;
+          }
+          if (event.key === 'ArrowDown' && items.length > 0) {
+            event.preventDefault();
+            setActiveIndex((current) => (current + 1) % items.length);
+            return;
+          }
+          if (event.key === 'ArrowUp' && items.length > 0) {
+            event.preventDefault();
+            setActiveIndex((current) => (current - 1 + items.length) % items.length);
+            return;
+          }
+          if (event.key === 'Enter' && items[safeIndex]) {
+            event.preventDefault();
+            items[safeIndex].action();
+            onClose();
+          }
+        }}
+      >
+        <div className="cmd-head">
+          <Icon name="search" size={16} />
+          <input
+            ref={inputRef}
+            className="cmd-input"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActiveIndex(0);
+            }}
+            placeholder="Nhập tên nhóm, màn hình hoặc lệnh…"
+            aria-label="Tìm kiếm lệnh hoặc nhóm"
+          />
+          <kbd className="kbd">ESC</kbd>
+        </div>
+        <div className="cmd-list" role="listbox">
+          {items.length === 0 ? (
+            <p className="cmd-empty">Không tìm thấy kết quả phù hợp.</p>
+          ) : (
+            items.map((item, idx) => (
+              <button
+                type="button"
+                key={item.id}
+                role="option"
+                aria-selected={idx === safeIndex}
+                className={idx === safeIndex ? 'cmd-item active' : 'cmd-item'}
+                onMouseEnter={() => setActiveIndex(idx)}
+                onClick={() => {
+                  item.action();
+                  onClose();
+                }}
+              >
+                <Icon name={item.icon} size={16} />
+                <span className="cmd-item-label">{item.label}</span>
+                <span className="cmd-item-meta">{item.meta}</span>
+              </button>
+            ))
+          )}
+        </div>
+        <div className="cmd-foot">
+          <span><kbd className="kbd">↑↓</kbd> Di chuyển</span>
+          <span><kbd className="kbd">↵</kbd> Mở</span>
+          <span><kbd className="kbd">ESC</kbd> Đóng</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CreateGroupModal({
+  open,
+  token,
+  userId,
+  onClose,
+  onCreateGroup,
+}: {
+  open: boolean;
+  token: string;
+  userId: number;
+  onClose: () => void;
+  onCreateGroup: (name: string, description: string, avatar?: GroupAvatarInput) => Promise<Group>;
+}) {
+  const toast = useToast();
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [urlInputOpen, setUrlInputOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const [createdGroup, setCreatedGroup] = useState<Group | null>(null);
+  const [candidates, setCandidates] = useState<InviteCandidate[]>([]);
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [inviteQuery, setInviteQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<InviteCandidate[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [invitedIds, setInvitedIds] = useState<number[]>([]);
+  const [invitingId, setInvitingId] = useState<number | null>(null);
+
+  const [lastOpen, setLastOpen] = useState(false);
+  const nameRef = useRef<HTMLInputElement | null>(null);
+  const inviteSearchRef = useRef<HTMLInputElement | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  if (open !== lastOpen) {
+    setLastOpen(open);
+    if (open) {
+      setName('');
+      setDescription('');
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      setAvatarUrl('');
+      setUrlInputOpen(false);
+      setBusy(false);
+      setCreatedGroup(null);
+      setCandidates([]);
+      setLoadingCandidates(false);
+      setInviteQuery('');
+      setSearchResults([]);
+      setSearching(false);
+      setInvitedIds([]);
+      setInvitingId(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      if (createdGroup) inviteSearchRef.current?.focus();
+      else nameRef.current?.focus();
+    });
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open, createdGroup, onClose]);
+
+  useEffect(() => {
+    return () => {
+      if (avatarPreview && avatarPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(avatarPreview);
+      }
+    };
+  }, [avatarPreview]);
+
+  useEffect(() => {
+    if (!open || !createdGroup) return undefined;
+    const controller = new AbortController();
+    let active = true;
+    void (async () => {
+      try {
+        const list = await api.getInviteCandidates(createdGroup.id, token, controller.signal);
+        if (!active) return;
+        setCandidates(list);
+      } catch {
+        /* ignore candidate load errors */
+      } finally {
+        if (active) setLoadingCandidates(false);
+      }
+    })();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [open, createdGroup, token]);
+
+  useEffect(() => {
+    if (!open || !createdGroup) return undefined;
+    const query = inviteQuery.trim();
+    if (query.length < 2) return undefined;
+    const controller = new AbortController();
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setSearching(true);
+      void (async () => {
+        try {
+          const users = await api.searchUsers(query, token, controller.signal);
+          if (!active) return;
+          setSearchResults(
+            users
+              .filter((person) => person.id !== userId)
+              .map((person) => ({
+                ...person,
+                invited: invitedIds.includes(person.id),
+              })),
+          );
+        } catch {
+          /* ignore */
+        } finally {
+          if (active) setSearching(false);
+        }
+      })();
+    }, 240);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, createdGroup, inviteQuery, token, userId, invitedIds]);
+
+  if (!open) return null;
+
+  const pickFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = '';
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+      toast('Chỉ hỗ trợ ảnh JPEG, PNG, WebP hoặc GIF.', 'bad');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast('Ảnh đại diện nhóm tối đa 5 MB.', 'bad');
+      return;
+    }
+    if (avatarPreview && avatarPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(avatarPreview);
+    }
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+    setAvatarUrl('');
+  };
+
+  const clearAvatar = () => {
+    if (avatarPreview && avatarPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(avatarPreview);
+    }
+    setAvatarFile(null);
+    setAvatarPreview(null);
+    setAvatarUrl('');
+  };
+
+  const resolvedPreview = avatarPreview || (avatarUrl.trim().startsWith('http') ? avatarUrl.trim() : null);
+
+  const submitCreate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (busy) return;
+    const cleanName = name.trim();
+    if (!cleanName) {
+      toast('Nhập tên cho nhóm học tập.', 'bad');
+      nameRef.current?.focus();
+      return;
+    }
+    setBusy(true);
+    try {
+      const group = await onCreateGroup(cleanName, description.trim(), {
+        file: avatarFile,
+        url: avatarUrl.trim() || undefined,
+      });
+      setLoadingCandidates(true);
+      setCreatedGroup(group);
+    } catch (caught) {
+      toast(caught instanceof Error ? caught.message : 'Không tạo được nhóm.', 'bad');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendInvite = async (person: InviteCandidate) => {
+    if (!createdGroup || invitingId !== null) return;
+    setInvitingId(person.id);
+    try {
+      await api.inviteMember(createdGroup.id, person.id, token);
+      setInvitedIds((current) => (current.includes(person.id) ? current : [...current, person.id]));
+      setCandidates((current) =>
+        current.map((item) => (item.id === person.id ? { ...item, invited: true } : item)),
+      );
+      setSearchResults((current) =>
+        current.map((item) => (item.id === person.id ? { ...item, invited: true } : item)),
+      );
+      toast(`Đã gửi lời mời tới ${person.name}.`);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Không gửi được lời mời.';
+      if (/đã được gửi|đã mời/i.test(message)) {
+        setInvitedIds((current) => (current.includes(person.id) ? current : [...current, person.id]));
+      }
+      toast(message, 'bad');
+    } finally {
+      setInvitingId(null);
+    }
+  };
+
+  const needle = inviteQuery.trim().toLocaleLowerCase();
+  const displayPeople: InviteCandidate[] = (() => {
+    const filteredFriends = needle
+      ? candidates.filter(
+          (person) =>
+            person.name.toLocaleLowerCase().includes(needle) ||
+            (person.username ?? '').toLocaleLowerCase().includes(needle) ||
+            person.email.toLocaleLowerCase().includes(needle),
+        )
+      : candidates;
+    if (needle.length < 2) return filteredFriends;
+    const seen = new Set(filteredFriends.map((person) => person.id));
+    const merged = [...filteredFriends];
+    for (const person of searchResults) {
+      if (!seen.has(person.id)) {
+        seen.add(person.id);
+        merged.push(person);
+      }
+    }
+    return merged;
+  })();
+
+  return (
+    <div className="cmd-backdrop" onClick={onClose} role="presentation">
+      <div
+        className="cgm-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cgm-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="cgm-top">
+          <div className="cgm-steps">
+            <span className={!createdGroup ? 'cgm-step active' : 'cgm-step done'}>
+              <i className="num">{createdGroup ? '✓' : '01'}</i>
+              <span>Thiết lập nhóm</span>
+            </span>
+            <span className="cgm-step-line" aria-hidden="true" />
+            <span className={createdGroup ? 'cgm-step active' : 'cgm-step'}>
+              <i className="num">02</i>
+              <span>Mời thành viên</span>
+            </span>
+          </div>
+          <button
+            type="button"
+            className="cgm-close"
+            onClick={onClose}
+            aria-label="Đóng hộp thoại"
+            title="Đóng (ESC)"
+          >
+            <Icon name="close" size={14} />
+          </button>
+        </div>
+
+        {!createdGroup ? (
+          <form className="cgm-body" onSubmit={submitCreate} noValidate>
+            <div className="cgm-hero">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                style={{ display: 'none' }}
+                onChange={pickFile}
+              />
+              <button
+                type="button"
+                className={resolvedPreview ? 'cgm-avatar-picker has-image' : 'cgm-avatar-picker'}
+                onClick={() => fileRef.current?.click()}
+                title="Bấm để tải ảnh đại diện nhóm"
+              >
+                {resolvedPreview ? (
+                  <img src={resolvedPreview} alt="Ảnh đại diện nhóm" />
+                ) : (
+                  <span className="cgm-avatar-placeholder">
+                    {name.trim() ? (
+                      <span className="cgm-avatar-initials">{initials(name)}</span>
+                    ) : (
+                      <Icon name="image" size={26} />
+                    )}
+                  </span>
+                )}
+                <span className="cgm-avatar-badge" aria-hidden="true">
+                  <Icon name="plus" size={13} />
+                </span>
+              </button>
+
+              <h2 className="cgm-title" id="cgm-title">
+                {name.trim() || 'Khởi tạo không gian nhóm'}
+              </h2>
+              <p className="cgm-subtitle">
+                Đặt biểu tượng tròn và tên nhóm. Bước tiếp theo bạn có thể mời bạn bè tham gia ngay.
+              </p>
+
+              <div className="cgm-avatar-pills">
+                <button
+                  type="button"
+                  className="cgm-pill-btn"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Icon name="image" size={13} />
+                  <span>{resolvedPreview ? 'Đổi ảnh khác' : 'Tải ảnh từ máy'}</span>
+                </button>
+                <button
+                  type="button"
+                  className={urlInputOpen ? 'cgm-pill-btn active' : 'cgm-pill-btn'}
+                  onClick={() => setUrlInputOpen((current) => !current)}
+                >
+                  <span>Dán link ảnh</span>
+                </button>
+                {resolvedPreview ? (
+                  <button
+                    type="button"
+                    className="cgm-pill-btn danger"
+                    onClick={clearAvatar}
+                  >
+                    <span>Xoá ảnh</span>
+                  </button>
+                ) : null}
+              </div>
+
+              {urlInputOpen ? (
+                <input
+                  className="field cgm-url-input"
+                  value={avatarUrl}
+                  onChange={(event) => {
+                    setAvatarUrl(event.target.value);
+                    if (avatarFile) {
+                      if (avatarPreview && avatarPreview.startsWith('blob:')) {
+                        URL.revokeObjectURL(avatarPreview);
+                      }
+                      setAvatarFile(null);
+                      setAvatarPreview(null);
+                    }
+                  }}
+                  placeholder="https://example.com/group-icon.png"
+                  aria-label="Liên kết ảnh đại diện nhóm"
+                />
+              ) : null}
+            </div>
+
+            <div className="cgm-fields">
+              <div className="cgm-field-group">
+                <div className="cgm-label-row">
+                  <label className="field-label" htmlFor="cgm-group-name">
+                    Tên nhóm học tập
+                  </label>
+                  <span className="cgm-char num">{name.length}/120</span>
+                </div>
+                <input
+                  id="cgm-group-name"
+                  ref={nameRef}
+                  className="field"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder="Ví dụ: Đồ án Trí tuệ nhân tạo · Nhóm 04"
+                  maxLength={120}
+                  required
+                />
+              </div>
+
+              <div className="cgm-field-group">
+                <div className="cgm-label-row">
+                  <label className="field-label" htmlFor="cgm-group-desc">
+                    Mục tiêu hoặc lịch họp (không bắt buộc)
+                  </label>
+                  <span className="cgm-char num">{description.length}/500</span>
+                </div>
+                <input
+                  id="cgm-group-desc"
+                  className="field"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="Ví dụ: Sprint tối thứ Tư hàng tuần · Mục tiêu điểm A+"
+                  maxLength={500}
+                />
+              </div>
+            </div>
+
+            <div className="cgm-foot">
+              <button type="button" className="btn-ghost" onClick={onClose}>
+                Huỷ bỏ
+              </button>
+              <button type="submit" className="btn" disabled={busy || name.trim().length === 0}>
+                <span>{busy ? 'Đang tạo nhóm…' : 'Tạo nhóm & Mời thành viên'}</span>
+                <Icon name="arrow-right" size={14} />
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="cgm-body">
+            <div className="cgm-created-banner">
+              <Avatar name={createdGroup.name} url={createdGroup.avatar_url} size={44} />
+              <div className="cgm-created-meta">
+                <div className="cgm-created-top">
+                  <span className="grow-code num">GRP-{String(createdGroup.id).padStart(2, '0')}</span>
+                  <span className="cgm-created-badge">ĐÃ KHỞI TẠO</span>
+                </div>
+                <h2 className="cgm-created-name" id="cgm-title">{createdGroup.name}</h2>
+                {createdGroup.description ? (
+                  <p className="cgm-created-desc">{createdGroup.description}</p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="cgm-invite-box">
+              <div className="cgm-label-row">
+                <label className="field-label" htmlFor="cgm-invite-search">
+                  Mời bạn bè hoặc tìm thành viên vào nhóm
+                </label>
+                {invitedIds.length > 0 ? (
+                  <span className="cgm-invited-count num">Đã mời {invitedIds.length} người</span>
+                ) : null}
+              </div>
+
+              <div className="cgm-search-wrap">
+                <Icon name="search" size={14} />
+                <input
+                  id="cgm-invite-search"
+                  ref={inviteSearchRef}
+                  value={inviteQuery}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setInviteQuery(next);
+                    if (next.trim().length < 2) {
+                      setSearchResults([]);
+                      setSearching(false);
+                    }
+                  }}
+                  placeholder="Tìm theo tên, @username hoặc email…"
+                  aria-label="Tìm bạn bè hoặc người dùng để mời vào nhóm"
+                />
+                {inviteQuery ? (
+                  <button
+                    type="button"
+                    className="cgm-search-clear"
+                    onClick={() => {
+                      setInviteQuery('');
+                      setSearchResults([]);
+                      setSearching(false);
+                    }}
+                    aria-label="Xoá từ khoá"
+                  >
+                    <Icon name="close" size={12} />
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="cgm-invite-list">
+                {loadingCandidates && displayPeople.length === 0 ? (
+                  <p className="cgm-invite-empty">Đang tải danh sách bạn bè…</p>
+                ) : displayPeople.length === 0 ? (
+                  <p className="cgm-invite-empty">
+                    {searching
+                      ? 'Đang tìm người dùng…'
+                      : inviteQuery.trim().length >= 2
+                        ? `Không tìm thấy người dùng khớp với “${inviteQuery}”.`
+                        : 'Nhập tên, @username hoặc email ở ô trên để tìm và mời bạn học.'}
+                  </p>
+                ) : (
+                  displayPeople.map((person) => {
+                    const isInvited = Boolean(person.invited || invitedIds.includes(person.id));
+                    const isInviting = invitingId === person.id;
+                    return (
+                      <div className="cgm-person" key={person.id}>
+                        <Avatar name={person.name} url={person.avatar_url} size={34} />
+                        <div className="cgm-person-info">
+                          <span className="cgm-person-name">{person.name}</span>
+                          <span className="cgm-person-sub">
+                            {person.username ? `@${person.username}` : person.email}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className={isInvited ? 'cgm-invite-btn invited' : 'cgm-invite-btn'}
+                          disabled={isInvited || isInviting}
+                          onClick={() => void sendInvite(person)}
+                        >
+                          {isInvited ? (
+                            <>
+                              <Icon name="check" size={13} />
+                              <span>Đã mời</span>
+                            </>
+                          ) : (
+                            <>
+                              <Icon name="plus" size={13} />
+                              <span>{isInviting ? 'Đang gửi…' : 'Mời'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="cgm-foot">
+              <button type="button" className="btn-ghost" onClick={onClose}>
+                Để sau
+              </button>
+              <button type="button" className="btn" onClick={onClose}>
+                <span>{invitedIds.length > 0 ? 'Hoàn tất · Vào nhóm' : 'Vào không gian nhóm'}</span>
+                <Icon name="arrow-right" size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -131,11 +868,12 @@ type ShellProps = {
   groupsLoading: boolean;
   groupsError: string | null;
   notifications: NotificationsState;
-  createIntent: number;
+  apiState: ApiState;
+  theme: Theme;
+  onToggleTheme: () => void;
   onNavigate: (route: Route) => void;
-  onCreateGroup: (name: string, description: string) => Promise<void>;
+  onCreateGroup: (name: string, description: string, avatar?: GroupAvatarInput) => Promise<Group>;
   onReloadGroups: () => void;
-  onNewGroup: () => void;
   onTasksChanged: () => void;
   onUserChange: (user: User) => void;
   onLogout: () => void;
@@ -149,25 +887,49 @@ function AppShell({
   groupsLoading,
   groupsError,
   notifications,
-  createIntent,
+  apiState,
+  theme,
+  onToggleTheme,
   onNavigate,
   onCreateGroup,
   onReloadGroups,
-  onNewGroup,
   onTasksChanged,
   onUserChange,
   onLogout,
   onStartTour,
 }: ShellProps) {
   const pageRef = useRef<HTMLDivElement | null>(null);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [railCollapsed, setRailCollapsed] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('studysync.railCollapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
   usePageMotion(routeKey(route), pageRef);
+
+  const openNewGroup = useCallback(() => {
+    setCreateModalOpen(true);
+  }, []);
+
+  const toggleRailCollapsed = useCallback(() => {
+    setRailCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem('studysync.railCollapsed', next ? '1' : '0');
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
 
   const { user, token } = session;
   const activeGroup =
     route.name === 'group' ? groups.find((group) => group.id === route.groupId) : undefined;
 
-  // The local group list can be stale — e.g. the reader joined on another
-  // device — so refresh once before declaring a deep-linked group missing.
   const retriedGroupRef = useRef<number | null>(null);
   useEffect(() => {
     if (route.name !== 'group' || activeGroup || groupsLoading || groupsError) return;
@@ -176,11 +938,36 @@ function AppShell({
     onReloadGroups();
   }, [route, activeGroup, groupsLoading, groupsError, onReloadGroups]);
 
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandOpen((current) => !current);
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'b') {
+        event.preventDefault();
+        toggleRailCollapsed();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [toggleRailCollapsed]);
+
   const missingGroup =
     route.name === 'group' && !groupsLoading && !groupsError && !activeGroup;
 
+  const routeCrumb =
+    route.name === 'home'
+      ? 'Tổng quan'
+      : route.name === 'friends'
+        ? 'Bạn bè'
+        : route.name === 'notifications'
+          ? 'Thông báo'
+          : route.name === 'profile'
+            ? 'Hồ sơ'
+            : activeGroup?.name ?? 'Không gian nhóm';
+
   return (
-    <div className="app">
+    <div className={railCollapsed ? 'app rail-collapsed' : 'app'}>
       <a className="skip" href="#main">
         Tới nội dung
       </a>
@@ -191,23 +978,53 @@ function AppShell({
         route={route}
         unread={notifications.unreadCount}
         notifications={notifications}
+        theme={theme}
+        collapsed={railCollapsed}
+        onToggleCollapsed={toggleRailCollapsed}
+        onToggleTheme={onToggleTheme}
+        onOpenCommand={() => setCommandOpen(true)}
         onNavigate={onNavigate}
-        onNewGroup={onNewGroup}
+        onNewGroup={openNewGroup}
         onStartTour={onStartTour}
         onLogout={onLogout}
         onGroupsChanged={onTasksChanged}
       />
 
-      <MobileHead
-        user={user}
-        notifications={notifications}
-        onProfile={() => onNavigate({ name: 'profile' })}
-        onNavigate={onNavigate}
-        onStartTour={onStartTour}
-        onGroupsChanged={onTasksChanged}
-      />
-
       <main className="main" id="main" tabIndex={-1}>
+        <header className="wbar">
+          <div className="wbar-crumbs">
+            <button type="button" className="wbar-root" onClick={() => onNavigate(HOME)}>
+              StudySync
+            </button>
+            <span className="wbar-sep" aria-hidden="true">/</span>
+            {route.name === 'group' ? (
+              <>
+                <button type="button" className="wbar-root" onClick={() => onNavigate(HOME)}>
+                  Nhóm học tập
+                </button>
+                <span className="wbar-sep" aria-hidden="true">/</span>
+              </>
+            ) : null}
+            <span className="wbar-current">{routeCrumb}</span>
+          </div>
+
+          <div className="wbar-actions">
+            <span className="wbar-telemetry" title="Trạng thái kết nối hệ thống">
+              <span className={apiState === 'ok' ? 'sdot ok' : apiState === 'down' ? 'sdot bad' : 'sdot'} />
+              <span>{apiState === 'ok' ? 'Đồng bộ thời gian thực' : apiState === 'down' ? 'Mất kết nối API' : 'Đang kiểm tra…'}</span>
+            </span>
+            <button type="button" className="btn-ghost btn-sm" onClick={() => setCommandOpen(true)}>
+              <Icon name="search" size={14} />
+              <span>Lệnh nhanh</span>
+              <kbd className="kbd">⌘K</kbd>
+            </button>
+            <button type="button" className="btn btn-sm" onClick={openNewGroup}>
+              <Icon name="plus" size={14} />
+              <span>Nhóm mới</span>
+            </button>
+          </div>
+        </header>
+
         <div className="page" ref={pageRef}>
           {route.name === 'home' ? (
             <Home
@@ -215,10 +1032,9 @@ function AppShell({
               groups={groups}
               loading={groupsLoading}
               error={groupsError}
-              createIntent={createIntent}
               onReload={onReloadGroups}
               onOpenGroup={(group) => onNavigate({ name: 'group', groupId: group.id })}
-              onCreateGroup={onCreateGroup}
+              onNewGroup={openNewGroup}
             />
           ) : null}
 
@@ -230,7 +1046,8 @@ function AppShell({
                   className="back"
                   onClick={() => onNavigate(HOME)}
                 >
-                  Tất cả nhóm
+                  <Icon name="arrow-left" size={15} />
+                  <span>Tất cả nhóm</span>
                 </button>
                 <EmptyState
                   title="Nhóm này không còn trong danh sách của bạn."
@@ -283,12 +1100,29 @@ function AppShell({
         </div>
       </main>
 
-      <TabBar route={route} unread={notifications.unreadCount} onNavigate={onNavigate} />
+      <CommandPalette
+        open={commandOpen}
+        groups={groups}
+        theme={theme}
+        onClose={() => setCommandOpen(false)}
+        onNavigate={onNavigate}
+        onNewGroup={openNewGroup}
+        onToggleTheme={onToggleTheme}
+        onStartTour={onStartTour}
+      />
+
+      <CreateGroupModal
+        open={createModalOpen}
+        token={token}
+        userId={user.id}
+        onClose={() => setCreateModalOpen(false)}
+        onCreateGroup={onCreateGroup}
+      />
     </div>
   );
 }
 
-function Workspace() {
+function Workspace({ theme, onToggleTheme }: { theme: Theme; onToggleTheme: () => void }) {
   const toast = useToast();
 
   const [session, setSession] = useState<Session | null>(() => consumeOAuthRedirect() ?? readSession());
@@ -298,24 +1132,15 @@ function Workspace() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(() => readSession() !== null);
   const [groupsError, setGroupsError] = useState<string | null>(null);
-  const [createIntent, setCreateIntent] = useState(0);
   const [tourNonce, setTourNonce] = useState(0);
 
   const token = session?.token ?? null;
   const notifications = useNotifications(token ?? '');
 
   const onRealtimeNotification = useCallback((notification: Notification) => {
-    // Chỉ phát sự kiện. useNotifications lắng nghe và tự nạp lại danh sách,
-    // nên không cần ở đây gọi thêm một lần /notifications.php để đếm số chưa
-    // đọc — đó chính là nguồn khiến badge và trang lệch nhau.
     window.dispatchEvent(new CustomEvent('studysync:notification', { detail: notification }));
   }, []);
 
-  /**
-   * Số chưa đọc trên sidebar phải sáng lên ngay khi tin vừa tới, không chờ
-   * 8 giây. Server bỏ qua người đang xem nhóm đó nên ở đây cứ cộng 1 là đúng;
-   * lần polling kế tiếp đối chiếu lại với mốc đọc thật trong database.
-   */
   const onRealtimeUnread = useCallback((signal: UnreadSignal) => {
     setGroups((current) =>
       current.map((group) =>
@@ -346,27 +1171,22 @@ function Workspace() {
     const launch = async () => {
       const { driver } = await import('driver.js');
       if (disposed) return;
-      // Below 981px the rail is display:none, so the friends step has to point
-      // at the tab bar; otherwise driver.js highlights an invisible element.
-      const friendsTarget = window.matchMedia('(min-width: 981px)').matches
-        ? '[data-tour="friends-nav"]'
-        : '[data-tour="friends-nav-tab"]';
       tour = driver({
         animate: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
         allowClose: true,
         allowScroll: true,
         showProgress: true,
-        nextBtnText: 'Tiếp',
+        nextBtnText: 'Tiếp theo',
         prevBtnText: 'Quay lại',
-        doneBtnText: 'Bắt đầu thôi',
+        doneBtnText: 'Hoàn tất',
         closeBtnLabel: 'Đóng hướng dẫn',
         popoverClass: 'studysync-tour-popover',
-        overlayColor: '#101b17',
+        overlayColor: '#040608',
         steps: [
-          { element: '[data-tour="overview"]', popover: { title: 'Tổng quan của bạn', description: 'Theo dõi số nhóm, việc đang mở và tiến độ học tập tại đây.', side: 'bottom', align: 'start' } },
-          { element: '[data-tour="group-list"]', popover: { title: 'Không gian nhóm', description: 'Mỗi nhóm có danh sách công việc, thành viên và khu chat riêng.', side: 'bottom', align: 'start' } },
-          { element: '[data-tour="create-group"]', popover: { title: 'Tạo nhóm học', description: 'Bắt đầu bằng cách tạo nhóm; sau đó bạn có thể mời bạn học cùng tham gia.', side: 'bottom', align: 'end' } },
-          { element: friendsTarget, popover: { title: 'Kết nối bạn học', description: 'Tìm và kết bạn tại đây để cộng tác, rồi mời họ vào nhóm.', side: 'right', align: 'center' } },
+          { element: '[data-tour="overview"]', popover: { title: 'Trung tâm điều hành', description: 'Theo dõi toàn bộ nhóm học tập, tiến độ công việc và hiệu suất hoàn thành theo thời gian thực.', side: 'bottom', align: 'start' } },
+          { element: '[data-tour="group-list"]', popover: { title: 'Không gian nhóm', description: 'Mỗi nhóm tích hợp bảng việc kiểu Linear, kênh thảo luận trực tiếp và danh sách thành viên.', side: 'bottom', align: 'start' } },
+          { element: '[data-tour="create-group"]', popover: { title: 'Khởi tạo nhóm mới', description: 'Tạo nhóm trong một giây và mời thành viên cùng lớp tham gia.', side: 'bottom', align: 'end' } },
+          { element: '[data-tour="friends-nav"]', popover: { title: 'Mạng lưới bạn học', description: 'Kết nối bạn học tại đây để mời vào nhóm chỉ với một cú nhấp.', side: 'right', align: 'center' } },
         ],
         onDestroyed: () => {
           try { window.localStorage.setItem(storageKey, 'done'); } catch { /* storage can be disabled */ }
@@ -379,12 +1199,9 @@ function Workspace() {
     return () => {
       disposed = true;
       window.clearTimeout(timer);
-      // Leaving Home mid-tour used to strand the overlay over the whole app.
       tour?.destroy();
       tour = null;
     };
-    // Keyed on the id, not the session object: /me.php and profile edits replace
-    // the session on every save, which used to stack a second tour on top.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user.id, booting, groupsLoading, route.name, tourNonce]);
 
@@ -481,12 +1298,6 @@ function Workspace() {
     };
   }, [token]);
 
-  /**
-   * Pill chưa đọc trên sidebar phải lớn lên kể cả khi không mở nhóm đó.
-   * WebSocket chỉ báo notification (nhắc tên, kết bạn) nên tin nhắn thường
-   * phải đi đường polling; rời nhóm thì navigate đã nạp lại ngay vì tab chat
-   * vừa gửi read.
-   */
   useEffect(() => {
     if (!token) return undefined;
     const onNotification = () => void loadGroups(true);
@@ -494,10 +1305,6 @@ function Workspace() {
     return () => window.removeEventListener('studysync:notification', onNotification);
   }, [token, loadGroups]);
 
-  /**
-   * Tab chat vừa gửi mốc đọc thì badge phải tụt ngay — con số vừa được cộng
-   * tức thì ở trên không nên phải chờ tới nhịp polling kế tiếp.
-   */
   useEffect(() => {
     if (!token) return undefined;
     const onGroupRead = (event: Event) => {
@@ -578,8 +1385,6 @@ function Workspace() {
     const hash = routeToHash(next);
     if (window.location.hash !== hash) window.history.pushState(null, '', hash);
     setRoute(next);
-    // Rời một nhóm là tab chat vừa gửi read cho nhóm đó, nên badge phải tụt
-    // ngay thay vì chờ tới lần polling kế tiếp.
     void loadGroups(true);
   }, [loadGroups]);
 
@@ -619,21 +1424,17 @@ function Workspace() {
   }, [token, toast]);
 
   const createGroup = useCallback(
-    async (name: string, description: string) => {
+    async (name: string, description: string, avatar?: GroupAvatarInput) => {
       if (!token) throw new Error('Chưa đăng nhập.');
-      const group = await api.createGroup(name, description, token);
+      const group = await api.createGroup(name, description, token, avatar);
       setGroups((current) => [group, ...current]);
       toast(`Đã tạo nhóm ${group.name}.`);
       void loadGroups(true);
       navigate({ name: 'group', groupId: group.id });
+      return group;
     },
     [token, toast, loadGroups, navigate],
   );
-
-  const openNewGroup = useCallback(() => {
-    navigate(HOME);
-    setCreateIntent((value) => value + 1);
-  }, [navigate]);
 
   const startTour = useCallback(() => {
     navigate(HOME);
@@ -641,7 +1442,14 @@ function Workspace() {
   }, [navigate]);
 
   if (!session) {
-    return <Landing onAuthed={handleAuthed} apiState={apiState} />;
+    return (
+      <Landing
+        onAuthed={handleAuthed}
+        apiState={apiState}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+      />
+    );
   }
 
   if (booting) return <Boot />;
@@ -654,11 +1462,12 @@ function Workspace() {
       groupsLoading={groupsLoading}
       groupsError={groupsError}
       notifications={notifications}
-      createIntent={createIntent}
+      apiState={apiState}
+      theme={theme}
+      onToggleTheme={onToggleTheme}
       onNavigate={navigate}
       onCreateGroup={createGroup}
       onReloadGroups={reloadGroups}
-      onNewGroup={openNewGroup}
       onTasksChanged={() => void loadGroups(true)}
       onUserChange={handleUserChange}
       onLogout={() => void logout()}
@@ -668,11 +1477,24 @@ function Workspace() {
 }
 
 export function WebApp() {
+  const [theme, setTheme] = useState<Theme>(() => readTheme());
   useDesignSystem();
   useDocumentChrome();
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      window.localStorage.setItem('studysync.theme', theme);
+    } catch { /* ignore */ }
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
+  }, []);
+
   return (
     <ToastProvider>
-      <Workspace />
+      <Workspace theme={theme} onToggleTheme={toggleTheme} />
     </ToastProvider>
   );
 }

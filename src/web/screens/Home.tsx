@@ -1,242 +1,219 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
-import { gsap } from 'gsap';
+import { useState } from 'react';
 import type { Group, User } from '../lib/api';
 import { longToday, percent } from '../lib/format';
-import { prefersReducedMotion, useCountUp } from '../lib/motion';
-import { EmptyState, ErrorBar, SkeletonRows } from '../components/ui';
-import { useToast } from '../components/Toast';
+import { useCountUp } from '../lib/motion';
+import { Avatar, EmptyState, ErrorBar, Icon, SkeletonRows } from '../components/ui';
 
 export function Home({
   user,
   groups,
   loading,
   error,
-  createIntent,
   onReload,
   onOpenGroup,
-  onCreateGroup,
+  onNewGroup,
 }: {
   user: User;
   groups: Group[];
   loading: boolean;
   error: string | null;
-  createIntent: number;
   onReload: () => void;
   onOpenGroup: (group: Group) => void;
-  onCreateGroup: (name: string, description: string) => Promise<void>;
+  onNewGroup: () => void;
 }) {
-  const toast = useToast();
+  const totalTasks = groups.reduce((sum, group) => sum + Number(group.task_count), 0);
   const openTasks = groups.reduce(
     (sum, group) => sum + Math.max(0, Number(group.task_count) - Number(group.completed_count)),
     0,
   );
   const doneTasks = groups.reduce((sum, group) => sum + Number(group.completed_count), 0);
+  const globalPct = percent(doneTasks, totalTasks);
 
   const groupsCount = useCountUp(groups.length);
   const openCount = useCountUp(openTasks);
   const doneCount = useCountUp(doneTasks);
 
-  const [createOpen, setCreateOpen] = useState(createIntent > 0);
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [busy, setBusy] = useState(false);
-  const formRef = useRef<HTMLFormElement | null>(null);
-  const nameRef = useRef<HTMLInputElement | null>(null);
-  const [lastIntent, setLastIntent] = useState(createIntent);
+  const [search, setSearch] = useState('');
 
-  // "Nhóm mới" từ thanh bên: mở form ngay khi intent tăng.
-  if (createIntent !== lastIntent) {
-    setLastIntent(createIntent);
-    if (createIntent > 0) setCreateOpen(true);
-  }
-
-  useEffect(() => {
-    if (!createOpen) return;
-    const frame = window.requestAnimationFrame(() => nameRef.current?.focus());
-    return () => window.cancelAnimationFrame(frame);
-  }, [createOpen]);
-
-  useLayoutEffect(() => {
-    if (!createOpen || !formRef.current || prefersReducedMotion()) return undefined;
-    const tween = gsap.fromTo(
-      formRef.current,
-      { height: 0, opacity: 0 },
-      { height: 'auto', opacity: 1, duration: 0.34, ease: 'power2.out', clearProps: 'height' },
-    );
-    return () => {
-      tween.kill();
-    };
-  }, [createOpen]);
-
-  const closeForm = () => {
-    setCreateOpen(false);
-    setName('');
-    setDescription('');
-  };
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (busy) return;
-    const cleanName = name.trim();
-    if (cleanName.length < 1) {
-      toast('Nhập tên cho nhóm.', 'bad');
-      return;
-    }
-    setBusy(true);
-    try {
-      await onCreateGroup(cleanName, description.trim());
-      closeForm();
-    } catch (caught) {
-      toast(caught instanceof Error ? caught.message : 'Không tạo được nhóm.', 'bad');
-    } finally {
-      setBusy(false);
-    }
-  };
+  const needle = search.trim().toLocaleLowerCase();
+  const visibleGroups =
+    needle === ''
+      ? groups
+      : groups.filter(
+          (group) =>
+            group.name.toLocaleLowerCase().includes(needle) ||
+            (group.description ?? '').toLocaleLowerCase().includes(needle),
+        );
 
   return (
     <>
       <div className="phead" data-tour="overview">
         <div>
-          <div className="date">{longToday()}</div>
+          <div className="date num">{longToday().toUpperCase()}</div>
           <h1 className="h1">Chào {user.name}.</h1>
           <p className="psub">
-            Đây là nhịp làm việc của nhóm bạn. Việc gì đang chờ nằm ngay bên dưới.
+            Toàn cảnh tiến độ các nhóm học tập của bạn. Chọn một nhóm bên dưới để điều phối công việc hoặc thảo luận trực tiếp.
           </p>
+        </div>
+        <div className="actions">
+          <button
+            type="button"
+            className="btn"
+            data-tour="create-group"
+            onClick={onNewGroup}
+          >
+            <Icon name="plus" size={14} />
+            <span>Tạo nhóm mới</span>
+          </button>
         </div>
       </div>
 
       <div className="ledger">
         <div className="stat">
+          <div className="stat-head">
+            <span className="stat-label">NHÓM ĐANG THAM GIA</span>
+            <span className="stat-tag num">ACTIVE</span>
+          </div>
           <span className="stat-num num" ref={groupsCount}>
             {groups.length}
           </span>
-          <div className="stat-label">Nhóm đang tham gia</div>
         </div>
         <div className="stat">
+          <div className="stat-head">
+            <span className="stat-label">VIỆC CÒN MỞ</span>
+            <span className="stat-tag num">QUEUE</span>
+          </div>
           <span className="stat-num num" ref={openCount}>
             {openTasks}
           </span>
-          <div className="stat-label">Việc còn mở</div>
         </div>
         <div className="stat">
+          <div className="stat-head">
+            <span className="stat-label">VIỆC ĐÃ HOÀN TẤT</span>
+            <span className="stat-tag num">DONE</span>
+          </div>
           <span className="stat-num num" ref={doneCount}>
             {doneTasks}
           </span>
-          <div className="stat-label">Việc đã xong</div>
+        </div>
+        <div className="stat">
+          <div className="stat-head">
+            <span className="stat-label">HIỆU SUẤT TỔNG</span>
+            <span className="stat-tag num">{doneTasks}/{totalTasks}</span>
+          </div>
+          <div className="stat-meter-row">
+            <span className="stat-num num">{globalPct}%</span>
+            <span className="stat-bar">
+              <i style={{ width: `${globalPct}%` }} />
+            </span>
+          </div>
         </div>
       </div>
 
       <div className="shead" data-tour="group-list">
-        <h2 className="h2">Nhóm của bạn</h2>
-        <button
-          type="button"
-          className="btn-quiet"
-          data-tour="create-group"
-          onClick={() => (createOpen ? closeForm() : setCreateOpen(true))}
-        >
-          {createOpen ? 'Đóng' : 'Tạo nhóm'}
-        </button>
+        <div className="shead-left">
+          <h2 className="h2">Không gian nhóm</h2>
+          <span className="shead-badge num">{groups.length}</span>
+        </div>
+        {groups.length > 0 ? (
+          <div className="shead-tools">
+            <div className="inline-search">
+              <Icon name="search" size={14} />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Lọc nhóm theo tên…"
+                aria-label="Lọc nhóm theo tên"
+              />
+            </div>
+          </div>
+        ) : null}
       </div>
 
-      {createOpen ? (
-        <form className="groupform" ref={formRef} onSubmit={submit} noValidate>
-          <div className="groupform-grid">
-            <div>
-              <label className="field-label" htmlFor="group-name">
-                Tên nhóm
-              </label>
-              <input
-                id="group-name"
-                ref={nameRef}
-                className="field"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Ôn thi Giải tích"
-                maxLength={120}
-              />
-            </div>
-            <div>
-              <label className="field-label" htmlFor="group-desc">
-                Mô tả ngắn, không bắt buộc
-              </label>
-              <input
-                id="group-desc"
-                className="field"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Ba buổi mỗi tuần, mục tiêu 8.0"
-                maxLength={500}
-              />
-            </div>
-          </div>
-          <div className="actions" style={{ marginTop: 14 }}>
-            <button type="submit" className="btn" disabled={busy || name.trim().length === 0}>
-              {busy ? 'Đang tạo…' : 'Tạo nhóm'}
-            </button>
-            <button type="button" className="btn-quiet" onClick={closeForm}>
-              Huỷ
-            </button>
-          </div>
-        </form>
-      ) : null}
-
       {error ? (
-        <div style={{ marginTop: 18 }}>
+        <div style={{ marginTop: 16 }}>
           <ErrorBar message={error} onRetry={onReload} />
         </div>
       ) : null}
 
-      <div style={{ marginTop: 8 }}>
+      <div className="group-list-wrap">
         {loading ? (
           <SkeletonRows rows={3} />
         ) : groups.length === 0 ? (
           <EmptyState
-            title="Chưa có nhóm nào."
+            title="Chưa có không gian nhóm nào."
             action={
-              <button type="button" className="btn" onClick={() => setCreateOpen(true)}>
-                Tạo nhóm đầu tiên
+              <button type="button" className="btn" onClick={onNewGroup}>
+                <Icon name="plus" size={14} />
+                <span>Tạo nhóm đầu tiên</span>
               </button>
             }
           >
-            Một nhóm là nơi công việc, thảo luận và thành viên cùng nằm. Tạo nhóm rồi mời người học cùng.
+            Mỗi nhóm là một không gian độc lập gồm bảng công việc, phòng thảo luận thời gian thực và danh sách thành viên.
           </EmptyState>
-        ) : (
-          groups.map((group) => {
-            const pct = percent(Number(group.completed_count), Number(group.task_count));
-            const unread = Math.max(0, Number(group.unread_count ?? 0));
-            const mentions = Math.max(0, Number(group.mention_count ?? 0));
-            return (
-              <button
-                type="button"
-                className={unread > 0 ? 'grow unread' : 'grow'}
-                key={group.id}
-                onClick={() => onOpenGroup(group)}
-              >
-                <span>
-                  <span className="grow-name">
-                    {group.name}
-                    {mentions > 0 ? (
-                      <span className="grow-mention" aria-label={`${mentions} tin nhắc đến bạn`}>
-                        @{mentions > 99 ? '99+' : mentions}
-                      </span>
-                    ) : unread > 0 ? (
-                      <span className="grow-unread" aria-label={`${unread} tin chưa đọc`}>
-                        {unread > 99 ? '99+' : unread}
-                      </span>
-                    ) : null}
-                  </span>
-                  <span className="grow-meta">
-                    {group.completed_count} trên {group.task_count} việc đã xong
-                  </span>
-                </span>
-                <span className="grow-prog">
-                  <i style={{ width: `${pct}%` }} />
-                </span>
-                <span className="grow-pct">{pct}%</span>
+        ) : visibleGroups.length === 0 ? (
+          <EmptyState
+            title={`Không tìm thấy nhóm khớp với “${search}”.`}
+            action={
+              <button type="button" className="btn-quiet" onClick={() => setSearch('')}>
+                Xoá bộ lọc
               </button>
-            );
-          })
+            }
+          />
+        ) : (
+          <div className="grow-grid">
+            {visibleGroups.map((group) => {
+              const pct = percent(Number(group.completed_count), Number(group.task_count));
+              const unread = Math.max(0, Number(group.unread_count ?? 0));
+              const mentions = Math.max(0, Number(group.mention_count ?? 0));
+              const open = Math.max(0, Number(group.task_count) - Number(group.completed_count));
+              return (
+                <button
+                  type="button"
+                  className={unread > 0 ? 'grow unread' : 'grow'}
+                  key={group.id}
+                  onClick={() => onOpenGroup(group)}
+                >
+                  <span className="grow-main">
+                    <span className="grow-top">
+                      <Avatar name={group.name} url={group.avatar_url} size={28} />
+                      <span className="grow-code num">GRP-{String(group.id).padStart(2, '0')}</span>
+                      <span className="grow-name">{group.name}</span>
+                      {mentions > 0 ? (
+                        <span className="grow-mention" aria-label={`${mentions} tin nhắc đến bạn`}>
+                          @{mentions > 99 ? '99+' : mentions}
+                        </span>
+                      ) : unread > 0 ? (
+                        <span className="grow-unread" aria-label={`${unread} tin chưa đọc`}>
+                          {unread > 99 ? '99+' : unread} mới
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="grow-meta">
+                      {group.description ||
+                        `${open} việc đang chờ · ${group.completed_count}/${group.task_count} hoàn tất`}
+                    </span>
+                  </span>
+
+                  <span className="grow-side">
+                    <span className="grow-side-meta">
+                      <span className="grow-tasks num">
+                        {group.completed_count}/{group.task_count} việc
+                      </span>
+                      <span className="grow-pct num">{pct}%</span>
+                    </span>
+                    <span className="grow-prog">
+                      <i style={{ width: `${pct}%` }} />
+                    </span>
+                  </span>
+
+                  <span className="grow-arrow" aria-hidden="true">
+                    <Icon name="arrow-right" size={16} />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
     </>

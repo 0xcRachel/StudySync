@@ -13,6 +13,7 @@ $endpoints = [
     'change_password.php' => 'api/auth/change_password.php',
     'create_group.php' => 'api/groups/create_group.php',
     'create_group_auth.php' => 'api/groups/create_group_auth.php',
+    'group_avatar.php' => 'api/groups/group_avatar.php',
     'list_groups.php' => 'api/groups/list_groups.php',
     'delete_group.php' => 'api/groups/delete_group.php',
     'group_members.php' => 'api/groups/group_members.php',

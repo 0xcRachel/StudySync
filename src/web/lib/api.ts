@@ -15,6 +15,7 @@ export type Group = {
   id: number;
   name: string;
   description?: string | null;
+  avatar_url?: string | null;
   task_count: number;
   completed_count: number;
   /** Tin của người khác sau mốc đọc per-group — sidebar vẽ pill + badge từ số này. */
@@ -23,6 +24,19 @@ export type Group = {
   mention_count?: number;
   created_at?: string;
 };
+
+export function resolveMediaUrl(url?: string | null): string | null {
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('https://') || trimmed.startsWith('http://') || trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
+    return trimmed;
+  }
+  if (trimmed.startsWith('/')) {
+    return `${API_BASE_URL}${trimmed}`;
+  }
+  return null;
+}
 
 export type TaskStatus = 'todo' | 'doing' | 'done';
 
@@ -199,8 +213,34 @@ export const changePassword = (currentPassword: string, newPassword: string, tok
 export const getGroups = (token: string, signal?: AbortSignal) =>
   request<Group[]>('/list_groups.php', { token, signal });
 
-export const createGroup = (name: string, description: string, token: string) =>
-  post<Group>('/create_group_auth.php', { name, description }, token);
+export type GroupAvatarInput = {
+  file?: File | null;
+  url?: string;
+};
+
+export const createGroup = (
+  name: string,
+  description: string,
+  token: string,
+  avatar?: GroupAvatarInput,
+) => {
+  if (avatar?.file) {
+    const form = new FormData();
+    form.append('name', name);
+    form.append('description', description);
+    form.append('avatar', avatar.file);
+    return request<Group>('/create_group_auth.php', { method: 'POST', body: form, token });
+  }
+  return post<Group>(
+    '/create_group_auth.php',
+    {
+      name,
+      description,
+      ...(avatar?.url?.trim() ? { avatar_url: avatar.url.trim() } : {}),
+    },
+    token,
+  );
+};
 
 export const getTasks = (groupId: number, token: string, signal?: AbortSignal) =>
   request<Task[]>(`/get_tasks.php?group_id=${groupId}`, { token, signal });

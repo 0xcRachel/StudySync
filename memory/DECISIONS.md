@@ -1,0 +1,2 @@
+| 2026-11-05 | Redesign StudySync web theo Discord | complex | ai-chan-core + ai-chan-frontend-design | coder/reviewer | medium | L4 | verified | Server dock + channels + dark surfaces; browser checked 1440px and 390px, composer stays above mobile nav. |
+| 2026-11-05 | Remove duplicate sidebar controls and wide-screen gutters | medium | ai-chan-coding | coder | low | L4 | verified | Full-width group page overrides dashboard max-width; global rail contains navigation only. |

@@ -7,7 +7,7 @@ declare(strict_types=1);
  * sweep: replaying ~25 CREATE/ALTER statements on every request cost roughly
  * 100 ms per call and took metadata locks under load.
  */
-const STUDYSYNC_SCHEMA_REVISION = '1';
+const STUDYSYNC_SCHEMA_REVISION = '2';
 
 /**
  * Kết nối PDO dùng chung cho mỗi request (singleton).
@@ -307,13 +307,15 @@ function ensure_schema(PDO $pdo, string $driver): void
 
         foreach ([
             'ALTER TABLE `groups` ADD COLUMN `description` VARCHAR(500) NULL AFTER `name`',
+            'ALTER TABLE `groups` ADD COLUMN `avatar_url` VARCHAR(500) NULL AFTER `description`',
             'ALTER TABLE `tasks` ADD COLUMN `description` TEXT NULL AFTER `title`',
             'ALTER TABLE `tasks` ADD COLUMN `priority` ENUM("low", "medium", "high") NOT NULL DEFAULT "medium" AFTER `status`',
             'ALTER TABLE `tasks` ADD COLUMN `due_at` DATETIME NULL AFTER `priority`',
             'ALTER TABLE `tasks` ADD COLUMN `created_by` INT UNSIGNED NULL AFTER `group_id`',
         ] as $alter) {
             try { $pdo->exec($alter); } catch (PDOException $error) {
-                if ((string) $error->getCode() !== '42S21') throw $error;
+                $driverCode = (int) ($error->errorInfo[1] ?? 0);
+                if ((string) $error->getCode() !== '42S21' && $driverCode !== 1060) throw $error;
             }
         }
 
@@ -362,9 +364,15 @@ function ensure_schema(PDO $pdo, string $driver): void
             `id` INTEGER PRIMARY KEY AUTOINCREMENT,
             `name` TEXT NOT NULL,
             `description` TEXT NULL,
+            `avatar_url` TEXT NULL,
             `created_at` TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )'
     );
+    try {
+        $pdo->exec('ALTER TABLE `groups` ADD COLUMN `avatar_url` TEXT NULL');
+    } catch (PDOException) {
+        /* Column already exists on upgraded SQLite DBs. */
+    }
 
     $pdo->exec(
         'CREATE TABLE IF NOT EXISTS `users` (

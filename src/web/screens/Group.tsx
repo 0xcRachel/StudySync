@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ChangeEvent, FormEvent, KeyboardEvent } from 'react';
 import * as api from '../lib/api';
 import type { Group, InviteCandidate, Member, Message, Task, TaskStatus, User } from '../lib/api';
@@ -88,7 +89,103 @@ function sameMoment(a?: string | null, b?: string | null): boolean {
   return Boolean(a && b) && dayKey(a) === dayKey(b);
 }
 
-function ChatImage({ url, token, onLoaded }: { url: string; token: string; onLoaded: () => void }) {
+type PreviewMedia = {
+  src: string;
+  senderName: string;
+  avatarUrl?: string | null;
+  timestamp?: string;
+};
+
+function ImageLightbox({
+  media,
+  onClose,
+}: {
+  media: PreviewMedia;
+  onClose: () => void;
+}) {
+  const [zoomed, setZoomed] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      className="lightbox-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Xem trước ảnh từ ${media.senderName}`}
+      onClick={onClose}
+    >
+      <header className="lightbox-bar" onClick={(event) => event.stopPropagation()}>
+        <div className="lightbox-author">
+          <Avatar name={media.senderName} url={media.avatarUrl} size={28} />
+          <div>
+            <div className="lightbox-sender">{media.senderName}</div>
+            {media.timestamp ? <div className="lightbox-time num">{media.timestamp}</div> : null}
+          </div>
+        </div>
+        <div className="lightbox-actions">
+          <button
+            type="button"
+            className="btn-ghost btn-sm"
+            onClick={() => setZoomed((current) => !current)}
+          >
+            {zoomed ? 'Thu nhỏ (100%)' : 'Phóng to (175%)'}
+          </button>
+          <a
+            className="btn-ghost btn-sm"
+            href={media.src}
+            download="studysync-image.png"
+          >
+            Tải xuống
+          </a>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={onClose}
+            aria-label="Đóng xem trước ảnh"
+          >
+            <Icon name="close" size={14} />
+            <span>Đóng</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="lightbox-stage" onClick={onClose}>
+        <img
+          className={zoomed ? 'lightbox-img zoomed' : 'lightbox-img'}
+          src={media.src}
+          alt={`Ảnh gửi bởi ${media.senderName}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            setZoomed((current) => !current);
+          }}
+        />
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function ChatImage({
+  url,
+  token,
+  onLoaded,
+  onPreview,
+}: {
+  url: string;
+  token: string;
+  onLoaded: () => void;
+  onPreview: (src: string) => void;
+}) {
   const [src, setSrc] = useState('');
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -102,42 +199,35 @@ function ChatImage({ url, token, onLoaded }: { url: string; token: string; onLoa
   }, [url, token]);
   if (failed) return <span className="chat-image-error">Ảnh hiện không tải được.</span>;
   return src ? (
-    <a className="chat-image-link" href={src} target="_blank" rel="noreferrer">
+    <button
+      type="button"
+      className="chat-image-btn"
+      onClick={() => onPreview(src)}
+      aria-label="Xem trước ảnh kích thước lớn"
+    >
       <img className="chat-image" src={src} alt="Ảnh được gửi trong cuộc trò chuyện" loading="lazy" onLoad={onLoaded} />
-    </a>
+      <span className="chat-image-zoom-hint">Nhấp để xem ảnh</span>
+    </button>
   ) : (
     <span className="chat-image-loading">Đang tải ảnh…</span>
   );
 }
 
-/**
- * Ngưỡng desktop: từ 1280px danh sách thành viên rời tab để thành cột phải
- * thường trực kiểu Discord/Slack. Phải khớp với @media trong styles.ts.
- */
-const WIDE_QUERY = '(min-width: 1280px)';
+const WIDE_QUERY = '(min-width: 0px)';
 
-/**
- * Skeleton riêng cho khung chat: mấy thanh ngang chung của danh sách việc
- * không cho biết gì về tin nhắn sắp hiện, còn hình bong bóng thì có — người
- * đọc thấy ngay tin của mình bên phải, tin người khác bên trái.
- */
 function ChatSkeleton() {
-  const rows = [
-    { side: 'left', width: 214 },
-    { side: 'left', width: 128 },
-    { side: 'right', width: 172 },
-    { side: 'left', width: 268 },
-    { side: 'right', width: 96 },
-  ];
+  const rows = [240, 160, 310, 200, 140];
   return (
     <>
       <p className="sr-only" role="status">Đang tải tin nhắn…</p>
       <div className="chat chat-skeleton" aria-hidden="true">
-        {rows.map((row, index) => (
-          <div className={row.side === 'right' ? 'sk-msg right' : 'sk-msg'} key={index}>
-            {row.side === 'left' ? <span className="sk sk-avatar" /> : null}
-            <span className="sk sk-bubble" style={{ width: row.width }} />
-            {row.side === 'right' ? <span className="sk sk-avatar" /> : null}
+        {rows.map((width, index) => (
+          <div className="sk-msg" key={index}>
+            <span className="sk sk-avatar" />
+            <div style={{ display: 'grid', gap: 6 }}>
+              <span className="sk" style={{ width: 110, height: 11 }} />
+              <span className="sk sk-bubble" style={{ width }} />
+            </div>
           </div>
         ))}
       </div>
@@ -183,6 +273,7 @@ export function GroupScreen({
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState('');
+  const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [giftOpen, setGiftOpen] = useState(false);
   const [reactionPickerId, setReactionPickerId] = useState<number | null>(null);
@@ -418,19 +509,17 @@ export function GroupScreen({
   );
 
   /**
-   * Đổi khổ màn hình là đổi cả cấu trúc. Đang ở tab Thành viên mà phóng to thì
-   * tab đó biến mất (thành viên đã sang cột phải), để lại cột nội dung trống
-   * rỗng — nên phải đưa về Thảo luận.
+   * Đổi khổ màn hình là đổi cả cấu trúc. Ở khổ rộng kênh Thành viên có thư mục
+   * riêng trong cột nội dung, nên không cần đẩy người dùng về Thảo luận nữa.
    */
   useEffect(() => {
     const query = window.matchMedia(WIDE_QUERY);
     const onChange = (event: MediaQueryListEvent) => {
       setWide(event.matches);
-      if (event.matches && tab === 'members') selectTab('chat');
     };
     query.addEventListener('change', onChange);
     return () => query.removeEventListener('change', onChange);
-  }, [tab, selectTab]);
+  }, []);
 
   const retry = () => {
     setLoading(true);
@@ -854,8 +943,25 @@ export function GroupScreen({
               Tất cả nhóm
             </button>
             <div className="channel-server">
-              <span className="channel-server-name">{group?.name ?? 'Nhóm học tập'}</span>
-              <span className="channel-server-meta">{headerMeta}</span>
+              <div className="channel-server-head">
+                <Avatar name={group?.name ?? 'Nhóm'} url={group?.avatar_url} size={32} />
+                <div className="channel-server-titles">
+                  <span className="channel-server-tag num">GRP-{String(groupId).padStart(2, '0')}</span>
+                  <span className="channel-server-name">{group?.name ?? 'Nhóm học tập'}</span>
+                </div>
+              </div>
+              {group?.description ? (
+                <span className="channel-server-desc">{group.description}</span>
+              ) : null}
+              <div className="channel-server-prog">
+                <div className="channel-server-prog-row">
+                  <span className="channel-server-meta">{headerMeta}</span>
+                  <span className="channel-server-pct num">{progress}%</span>
+                </div>
+                <div className="meter">
+                  <i style={{ width: `${progress}%` }} />
+                </div>
+              </div>
             </div>
             <p className="channel-section">Kênh chữ</p>
             {channels.map((channel) => (
@@ -876,7 +982,9 @@ export function GroupScreen({
             ))}
             <button
               type="button"
+              id="channel-members"
               className={tab === 'members' ? 'channel-row people active' : 'channel-row people'}
+              aria-current={tab === 'members' ? 'true' : undefined}
               onClick={() => selectTab('members')}
             >
               <Icon name="users" size={15} />
@@ -915,7 +1023,9 @@ export function GroupScreen({
             <h1 className="channel-title">
               {tab === 'tasks' ? 'công việc' : tab === 'chat' ? 'thảo-luận' : 'Thành viên'}
             </h1>
-            <span className="channel-topic">{group?.description || headerMeta}</span>
+            <span className="channel-topic">
+              {tab === 'tasks' ? headerMeta : tab === 'chat' ? `${messages.length} tin nhắn` : `${members.length} thành viên`}
+            </span>
             {tab === 'chat' && messages.length > 0 ? (
               <input
                 className="channel-search"
@@ -1091,12 +1201,17 @@ export function GroupScreen({
           </div>
           {loading ? (
             <ChatSkeleton />
-          ) : error ? null : messages.length === 0 ? (
-            <EmptyState title="Chưa có tin nhắn nào.">
-              Mở đầu bằng một câu ngắn: hôm nay nhóm làm gì, ai cần gì.
-            </EmptyState>
-          ) : (
+          ) : error ? null : (
             <div className="chat" ref={chatScrollRef}>
+              {!hasOlder && chatNeedle === '' ? (
+                <div className="chat-welcome">
+                  <div className="chat-welcome-icon" aria-hidden="true">#</div>
+                  <h2 className="chat-welcome-title">Chào mừng đến với #thảo-luận!</h2>
+                  <p className="chat-welcome-sub">
+                    Đây là điểm khởi đầu của kênh thảo luận nhóm <strong>{group?.name ?? 'học tập'}</strong>. Mọi tin nhắn, tệp ảnh và phản hồi đều đồng bộ trực tiếp.
+                  </p>
+                </div>
+              ) : null}
               {hasOlder ? (
                 <div className="chat-older">
                   <button type="button" className="btn-quiet btn-sm" onClick={() => void loadOlder()} disabled={olderLoading}>
@@ -1113,38 +1228,175 @@ export function GroupScreen({
                 <div className="chat-unit" key={`unit-${message.id}`}>
                   {showDay ? <p className="chat-day"><span>{dayLabel(message.created_at)}</span></p> : null}
                   <article
-                    className={message.sender_id === user.id ? 'msg me' : 'msg'}
+                    className={
+                      message.reply_to
+                        ? message.sender_id === user.id
+                          ? 'msg me has-reply'
+                          : 'msg has-reply'
+                        : message.sender_id === user.id
+                          ? 'msg me'
+                          : 'msg'
+                    }
                     key={message.id}
                     data-continuation={continuation ? 'true' : 'false'}
                   >
+                    {message.reply_to ? (
+                      <div className="msg-reply-spine">
+                        <span className="msg-reply-elbow" aria-hidden="true" />
+                        <Avatar name={message.reply_to.sender_name} url={message.reply_to.avatar_url} size={16} />
+                        <strong className="msg-reply-author">@{message.reply_to.sender_name}</strong>
+                        <span className="reply-preview">{message.reply_to.body || '[Hình ảnh đính kèm]'}</span>
+                      </div>
+                    ) : null}
+
+                    <div className="msg-actions">
+                      <div className="reaction-anchor">
+                        <button
+                          type="button"
+                          className="msg-action"
+                          onClick={() => setReactionPickerId((current) => current === message.id ? null : message.id)}
+                          aria-label="Thả biểu cảm"
+                          aria-expanded={reactionPickerId === message.id}
+                          title="Thả biểu cảm"
+                        >
+                          <Icon name="smiley" size={15} />
+                        </button>
+                        {reactionPickerId === message.id ? (
+                          <div className="message-reaction-menu">
+                            {CHAT_REACTIONS.map((emoji) => (
+                              <button type="button" key={emoji} onClick={() => void reactToMessage(message, emoji)}>
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="msg-action"
+                        onClick={() => {
+                          setReplyTarget(message);
+                          window.requestAnimationFrame(() => chatInputRef.current?.focus());
+                        }}
+                        aria-label={`Trả lời ${message.sender_name}`}
+                        title={`Trả lời ${message.sender_name}`}
+                      >
+                        <Icon name="reply" size={15} />
+                      </button>
+                      {message.sender_id === user.id ? (
+                        <button
+                          type="button"
+                          className="msg-action"
+                          onClick={() => startEditingMessage(message)}
+                          aria-label="Sửa tin nhắn"
+                          title="Sửa tin nhắn"
+                        >
+                          <Icon name="pencil" size={15} />
+                        </button>
+                      ) : null}
+                      {message.sender_id === user.id || canModerate ? (
+                        <button
+                          type="button"
+                          className={deleteConfirmId === message.id ? 'msg-action danger confirm' : 'msg-action danger'}
+                          onClick={() => void removeMessage(message)}
+                          aria-label={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'}
+                          title={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'}
+                        >
+                          {deleteConfirmId === message.id ? 'Xóa?' : <Icon name="trash" size={15} />}
+                        </button>
+                      ) : null}
+                    </div>
+
                     {continuation ? (
                       <span className="msg-gutter" aria-hidden="true">
                         <span className="msg-hover-time">{formatTime(message.created_at)}</span>
                       </span>
                     ) : (
-                      <Avatar name={message.sender_name} url={message.avatar_url} size={30} />
+                      <Avatar name={message.sender_name} url={message.avatar_url} size={38} />
                     )}
+
                     <div className="msg-content">
-                      <div className={continuation ? 'msg-head msg-head-quiet' : 'msg-head'}>
-                        {continuation ? null : <span className="msg-name">{message.sender_name}</span>}
-                        {continuation ? null : <span className="msg-time">{formatTime(message.created_at)}{message.edited_at ? ' · đã sửa' : ''}</span>}
-                        {continuation && message.edited_at ? <span className="msg-time">đã sửa</span> : null}
-                        <div className="msg-actions">
-                            <div className="reaction-anchor"><button type="button" className="msg-action" onClick={() => setReactionPickerId((current) => current === message.id ? null : message.id)} aria-label="Thả biểu cảm" aria-expanded={reactionPickerId === message.id} title="Thả biểu cảm"><Icon name="smiley" /></button>{reactionPickerId === message.id ? <div className="message-reaction-menu">{CHAT_REACTIONS.map((emoji) => <button type="button" key={emoji} onClick={() => void reactToMessage(message, emoji)}>{emoji}</button>)}</div> : null}</div>
-                            <button type="button" className="msg-action" onClick={() => { setReplyTarget(message); window.requestAnimationFrame(() => chatInputRef.current?.focus()); }} aria-label={`Trả lời ${message.sender_name}`} title={`Trả lời ${message.sender_name}`}><Icon name="reply" /></button>
-                            {message.sender_id === user.id ? <button type="button" className="msg-action" onClick={() => startEditingMessage(message)} aria-label="Sửa tin nhắn" title="Sửa tin nhắn"><Icon name="pencil" /></button> : null}
-                            {message.sender_id === user.id || canModerate ? <button type="button" className={deleteConfirmId === message.id ? 'msg-action danger confirm' : 'msg-action danger'} onClick={() => void removeMessage(message)} aria-label={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'} title={deleteConfirmId === message.id ? 'Bấm lần nữa để xác nhận xoá' : 'Xoá tin nhắn'}>{deleteConfirmId === message.id ? 'Xóa?' : <Icon name="trash" />}</button> : null}
-                        </div>
-                      </div>
-                      {message.body || message.reply_to || message.image_url || editingMessageId === message.id ? (
-                        <div className={message.body || message.reply_to ? 'msg-bubble' : 'msg-bubble media-only'}>
-                          {message.reply_to ? <div className="msg-reply-quote"><Avatar name={message.reply_to.sender_name} url={message.reply_to.avatar_url} size={18} /><span><strong>{message.reply_to.sender_name}</strong><span className="reply-preview">{message.reply_to.body || '[Ảnh]'}</span></span></div> : null}
-                          {editingMessageId === message.id ? <div className="message-edit"><textarea value={editDraft} onChange={(event) => setEditDraft(event.target.value)} maxLength={4000} autoFocus /><div><button type="button" className="btn-quiet" onClick={() => setEditingMessageId(null)}>Huỷ</button><button type="button" className="btn btn-sm" onClick={() => void saveEditedMessage(message)}>Lưu</button></div></div> : message.body ? <p className="msg-body">{renderBody(message.body)}</p> : null}
-                          {message.image_url ? <ChatImage url={message.image_url} token={token} onLoaded={restickAfterMedia} /> : null}
+                      {!continuation ? (
+                        <div className="msg-head">
+                          <span className="msg-name">{message.sender_name}</span>
+                          {message.sender_id === user.id ? <span className="msg-self-tag">BẠN</span> : null}
+                          <span className="msg-time">
+                            {formatTime(message.created_at)}
+                            {message.edited_at ? ' · (đã chỉnh sửa)' : ''}
+                          </span>
                         </div>
                       ) : null}
-                      {message.reactions?.length ? <div className="msg-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction.emoji} className={reaction.reacted ? 'msg-reaction active' : 'msg-reaction'} aria-pressed={reaction.reacted} onClick={() => void reactToMessage(message, reaction.emoji)}>{reaction.emoji}<span>{reaction.count}</span></button>)}</div> : null}
-                      {message.id === latestOwnMessageId && latestReaders.length > 0 ? <div className="message-read">Đã xem bởi {latestReaders.slice(0, 3).join(', ')}{latestReaders.length > 3 ? ` và ${latestReaders.length - 3} người khác` : ''}</div> : null}
+
+                      {editingMessageId === message.id ? (
+                        <div className="message-edit">
+                          <textarea
+                            value={editDraft}
+                            onChange={(event) => setEditDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Escape') setEditingMessageId(null);
+                              if (event.key === 'Enter' && !event.shiftKey) {
+                                event.preventDefault();
+                                void saveEditedMessage(message);
+                              }
+                            }}
+                            maxLength={4000}
+                            autoFocus
+                          />
+                          <div>
+                            <button type="button" className="btn-quiet" onClick={() => setEditingMessageId(null)}>
+                              Huỷ (Esc)
+                            </button>
+                            <button type="button" className="btn btn-sm" onClick={() => void saveEditedMessage(message)}>
+                              Lưu thay đổi (Enter)
+                            </button>
+                          </div>
+                        </div>
+                      ) : message.body ? (
+                        <p className="msg-body">
+                          {renderBody(message.body)}
+                          {continuation && message.edited_at ? <span className="msg-edited-inline"> (đã chỉnh sửa)</span> : null}
+                        </p>
+                      ) : null}
+
+                      {message.image_url ? (
+                        <ChatImage
+                          url={message.image_url}
+                          token={token}
+                          onLoaded={restickAfterMedia}
+                          onPreview={(src) =>
+                            setPreviewMedia({
+                              src,
+                              senderName: message.sender_name,
+                              avatarUrl: message.avatar_url,
+                              timestamp: formatTime(message.created_at),
+                            })
+                          }
+                        />
+                      ) : null}
+
+                      {message.reactions?.length ? (
+                        <div className="msg-reactions">
+                          {message.reactions.map((reaction) => (
+                            <button
+                              type="button"
+                              key={reaction.emoji}
+                              className={reaction.reacted ? 'msg-reaction active' : 'msg-reaction'}
+                              aria-pressed={reaction.reacted}
+                              onClick={() => void reactToMessage(message, reaction.emoji)}
+                            >
+                              {reaction.emoji}
+                              <span>{reaction.count}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {message.id === latestOwnMessageId && latestReaders.length > 0 ? (
+                        <div className="message-read">
+                          Đã xem bởi {latestReaders.slice(0, 3).join(', ')}
+                          {latestReaders.length > 3 ? ` và ${latestReaders.length - 3} người khác` : ''}
+                        </div>
+                      ) : null}
                     </div>
                   </article>
                 </div>
@@ -1155,24 +1407,116 @@ export function GroupScreen({
           {Object.keys(typingUsers).length > 0 ? <p className="chat-typing" aria-live="polite">{Object.values(typingUsers).join(', ')} đang nhập…</p> : null}
           <form className="chat-form" onSubmit={submitMessage}>
             <input ref={imageInputRef} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={chooseImage} aria-label="Chọn ảnh để gửi" />
-            {replyTarget ? <div className="chat-compose-context"><span className="replying-label">Đang trả lời <strong>{replyTarget.sender_name}</strong><span className="replying-preview">{replyTarget.body || '[Ảnh]'}</span></span><button type="button" className="context-close" onClick={() => setReplyTarget(null)} aria-label="Huỷ trả lời" title="Huỷ trả lời"><Icon name="close" size={15} /></button></div> : null}
-            {selectedImage ? <div className="chat-image-preview"><img src={imagePreviewUrl} alt="Ảnh sắp gửi" /><span>{selectedImage.name}<small>{(selectedImage.size / 1024 / 1024).toFixed(2)} MB · tối đa 5 MB</small></span><button type="button" className="context-close" onClick={() => { setSelectedImage(null); setImagePreviewUrl(''); if (imageInputRef.current) imageInputRef.current.value = ''; }} aria-label="Bỏ ảnh" title="Bỏ ảnh"><Icon name="close" size={15} /></button></div> : null}
+            {replyTarget ? <div className="chat-compose-context"><span className="replying-label">Đang trả lời <strong>@{replyTarget.sender_name}</strong><span className="replying-preview">{replyTarget.body || '[Ảnh]'}</span></span><button type="button" className="context-close" onClick={() => setReplyTarget(null)} aria-label="Huỷ trả lời" title="Huỷ trả lời"><Icon name="close" size={15} /></button></div> : null}
+            {selectedImage ? (
+              <div className="chat-image-preview">
+                <button
+                  type="button"
+                  className="chat-image-preview-thumb"
+                  onClick={() =>
+                    setPreviewMedia({
+                      src: imagePreviewUrl,
+                      senderName: user.name,
+                      avatarUrl: user.avatar_url,
+                      timestamp: 'Bản nháp đính kèm',
+                    })
+                  }
+                  title="Nhấp để xem trước ảnh đính kèm"
+                >
+                  <img src={imagePreviewUrl} alt="Ảnh sắp gửi" />
+                </button>
+                <span>
+                  {selectedImage.name}
+                  <small>{(selectedImage.size / 1024 / 1024).toFixed(2)} MB · Nhấp vào ảnh để xem trước</small>
+                </span>
+                <button
+                  type="button"
+                  className="context-close"
+                  onClick={() => {
+                    setSelectedImage(null);
+                    setImagePreviewUrl('');
+                    if (imageInputRef.current) imageInputRef.current.value = '';
+                  }}
+                  aria-label="Bỏ ảnh"
+                  title="Bỏ ảnh"
+                >
+                  <Icon name="close" size={15} />
+                </button>
+              </div>
+            ) : null}
             <div className="chat-compose-row">
               <div className="chat-tools">
-                <button type="button" className="chat-tool" onClick={() => imageInputRef.current?.click()} disabled={sending} aria-label="Đính kèm ảnh" title="Đính kèm ảnh"><Icon name="image" /></button>
-                <button type="button" className="chat-tool" onClick={startMention} disabled={sending || members.length < 2} aria-label="Nhắc đến thành viên" title="Nhắc đến thành viên (@)"><Icon name="at" /></button>
-                <div className="chat-popover-anchor"><button type="button" className="chat-tool" onClick={() => { setEmojiOpen((open) => !open); setGiftOpen(false); }} aria-label="Chọn emoji" title="Emoji" aria-expanded={emojiOpen}><Icon name="smiley" /></button>{emojiOpen ? <div className="emoji-menu" aria-label="Chọn emoji">{CHAT_EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => insertEmoji(emoji)} aria-label={`Chèn ${emoji}`}>{emoji}</button>)}</div> : null}</div>
-                <div className="chat-popover-anchor"><button type="button" className="chat-tool" onClick={() => { setGiftOpen((open) => !open); setEmojiOpen(false); }} aria-label="Gửi quà" title="Quà tặng" aria-expanded={giftOpen}><Icon name="gift" /></button>{giftOpen ? <div className="gift-menu" aria-label="Chọn quà">{CHAT_GIFTS.map((gift) => <button type="button" key={gift.label} onClick={() => sendGift(gift)}><span>{gift.icon}</span>{gift.label}</button>)}</div> : null}</div>
+                <button type="button" className="chat-tool" onClick={() => imageInputRef.current?.click()} disabled={sending} aria-label="Đính kèm ảnh" title="Đính kèm ảnh"><Icon name="plus" /></button>
+                <button type="button" className="chat-tool" onClick={() => imageInputRef.current?.click()} disabled={sending} aria-label="Tải ảnh lên" title="Tải ảnh lên"><Icon name="image" /></button>
               </div>
               <div className="chat-text-wrap">
-                <textarea ref={chatInputRef} className="chat-textarea" value={chatDraft} onChange={(event) => { setChatDraft(event.target.value); setMentionIndex(0); }} onKeyDown={(event) => { if (onMentionKey(event)) return; if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={replyTarget ? `Trả lời ${replyTarget.sender_name}…` : 'Nhắn tin cho nhóm… (@ để nhắc tên)'} aria-label="Tin nhắn mới" aria-keyshortcuts="Enter Shift+Enter" title="Enter để gửi, Shift+Enter để xuống dòng" maxLength={4000} />
+                <textarea ref={chatInputRef} className="chat-textarea" value={chatDraft} onChange={(event) => { setChatDraft(event.target.value); setMentionIndex(0); }} onKeyDown={(event) => { if (onMentionKey(event)) return; if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={replyTarget ? `Trả lời @${replyTarget.sender_name}…` : 'Nhắn tin tới #thảo-luận…'} aria-label="Tin nhắn mới" aria-keyshortcuts="Enter Shift+Enter" title="Enter để gửi, Shift+Enter để xuống dòng" maxLength={4000} />
                 {mentionOptions.length > 0 ? <div className="mention-menu" role="listbox" aria-label="Gợi ý thành viên">{mentionOptions.map((member) => <button type="button" key={member.id} role="option" aria-selected={member.id === activeMention?.id} className="mention-option" onClick={() => insertMention(member.name)}><Avatar name={member.name} url={member.avatar_url} size={26} /><span>{member.name}<small>@{member.username ?? member.name.toLocaleLowerCase().replace(/\s+/g, '')}</small></span></button>)}</div> : null}
+              </div>
+              <div className="chat-tools">
+                <button type="button" className="chat-tool" onClick={startMention} disabled={sending || members.length < 2} aria-label="Nhắc đến thành viên" title="Nhắc đến thành viên (@)"><Icon name="at" /></button>
+                <div className="chat-popover-anchor"><button type="button" className="chat-tool" onClick={() => { setGiftOpen((open) => !open); setEmojiOpen(false); }} aria-label="Gửi quà" title="Quà tặng" aria-expanded={giftOpen}><Icon name="gift" /></button>{giftOpen ? <div className="gift-menu" aria-label="Chọn quà">{CHAT_GIFTS.map((gift) => <button type="button" key={gift.label} onClick={() => sendGift(gift)}><span>{gift.icon}</span>{gift.label}</button>)}</div> : null}</div>
+                <div className="chat-popover-anchor"><button type="button" className="chat-tool" onClick={() => { setEmojiOpen((open) => !open); setGiftOpen(false); }} aria-label="Chọn emoji" title="Emoji" aria-expanded={emojiOpen}><Icon name="smiley" /></button>{emojiOpen ? <div className="emoji-menu" aria-label="Chọn emoji">{CHAT_EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => insertEmoji(emoji)} aria-label={`Chèn ${emoji}`}>{emoji}</button>)}</div> : null}</div>
               </div>
               <button type="submit" className="chat-send" disabled={sending || (chatDraft.trim().length === 0 && !selectedImage)} aria-label="Gửi tin nhắn" title="Gửi tin nhắn">{sending ? <span className="send-dots">…</span> : <Icon name="send" size={17} />}</button>
             </div>
           </form>
+          {previewMedia ? <ImageLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} /> : null}
         </section>
       ) : null}
+
+        {wide && tab === 'members' ? (
+          <section className="member-directory" role="tabpanel" aria-labelledby="channel-members">
+            <div className="shead tight">
+              <h2 className="h2">Thành viên</h2>
+              <span className="micro faint num">{members.length} người</span>
+            </div>
+            {loading ? (
+              <SkeletonRows rows={3} />
+            ) : error ? null : members.length === 0 ? (
+              <EmptyState title="Chưa tải được thành viên." />
+            ) : (
+              <>
+                <input
+                  className="member-search directory-search"
+                  value={memberQuery}
+                  onChange={(event) => setMemberQuery(event.target.value)}
+                  placeholder="Tìm theo tên hoặc @username"
+                  aria-label="Tìm thành viên trong nhóm"
+                />
+                {memberGroups.length === 0 ? (
+                  <p className="member-none">Không có ai khớp với “{memberQuery}”.</p>
+                ) : null}
+                {memberGroups.map((roleGroup) => (
+                  <section className="member-group" key={roleGroup.role}>
+                    <p className="member-section">
+                      {ROLE_LABEL[roleGroup.role] ?? roleGroup.role}
+                      <span className="member-section-count">{roleGroup.people.length}</span>
+                    </p>
+                    {roleGroup.people.map((member) => {
+                      const present = isPresent(member);
+                      return (
+                        <div className={present ? 'member' : 'member offline'} key={member.id}>
+                          <span className="member-avatar">
+                            <Avatar name={member.name} url={member.avatar_url} size={34} />
+                            <i className={present ? 'presence online' : 'presence'} aria-hidden="true" />
+                          </span>
+                          <div>
+                            <div className="member-name">{member.name}{member.id === user.id ? ' (bạn)' : ''}</div>
+                            <div className="member-sub">
+                              {member.username ? `@${member.username} · ` : ''}{present ? 'Đang hoạt động' : 'Ngoại tuyến'}
+                            </div>
+                          </div>
+                          <span className="member-role">{ROLE_LABEL[roleGroup.role] ?? roleGroup.role}</span>
+                        </div>
+                      );
+                    })}
+                  </section>
+                ))}
+              </>
+            )}
+          </section>
+        ) : null}
         </div>
 
       {/* Cột thành viên là anh em trực tiếp của .group-main: mobile xếp xuống
@@ -1191,7 +1535,7 @@ export function GroupScreen({
             <EmptyState title="Chưa tải được thành viên." />
           ) : (
             <>
-              {members.length > 4 ? (
+              {members.length > 4 && !(wide && tab === 'members') ? (
                 <input
                   className="member-search"
                   value={memberQuery}
